@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import XLSX from 'xlsx';
-import { STATES, latestPopestFile, parseGrid, stateIndex } from './build-data.mjs';
+import { STATES, latestPopestFile, parseGrid, publishedTotals, stateIndex } from './build-data.mjs';
 import { acsLinks } from './fetch-raw.mjs';
 
 const RAW = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'raw', 'acs');
@@ -64,4 +64,19 @@ test('latestPopestFile picks the newest vintage', () => {
     vintage: 2026,
   });
   assert.throws(() => latestPopestFile(['notes.txt']));
+});
+
+test('published total-mover margins of error', () => {
+  const ix = (abbr) => STATES.findIndex((s) => s[1] === abbr);
+  // 2005-2009 tables have no totals.
+  assert.deepEqual(publishedTotals(path.join(RAW, 'acs1_2005.xls')), { inMoe: null, outMoe: null });
+  // 2010-2023: in-movers only ("Different state of residence 1 year ago", Total).
+  const t23 = publishedTotals(path.join(RAW, 'acs1_2023.xlsx'));
+  assert.equal(t23.inMoe[ix('WA')], 10566);
+  assert.equal(t23.outMoe, null);
+  // 2024: both, from the supplemental sheets.
+  const t24 = publishedTotals(path.join(RAW, 'acs1_2024.xlsx'));
+  assert.equal(t24.inMoe[ix('AL')], 9899);
+  assert.equal(t24.outMoe[ix('AL')], 8922);
+  assert.equal(t24.inMoe.filter((v) => v === null).length, 0);
 });

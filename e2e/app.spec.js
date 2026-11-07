@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 const GREEN = '#12782f'; // --arrow-in (light)
 const RED = '#b3262a'; // --arrow-out (light)
+const GRAY = '#7d7b75'; // --arrow-ns (light): net direction not significant
 
 // Fail any test that logs a console error or throws in the page.
 test.beforeEach(async ({ page }, testInfo) => {
@@ -44,6 +45,7 @@ function arrows(page) {
         w: a.w,
         kind: a.kind,
         stroke: g.querySelector('.shaft').getAttribute('stroke'),
+        moe: a.moe,
         strokeWidth: Number(g.querySelector('.shaft').getAttribute('stroke-width')),
         o: a.o,
         d: a.d,
@@ -118,8 +120,10 @@ test('focused state, Net mode: in is green, out is red', async ({ page }) => {
   const a = await arrows(page);
   expect(a).toHaveLength(12);
   for (const x of a) {
-    // Arrows ending at Texas are inflows (green); arrows leaving it are outflows (red).
-    expect(x.stroke).toBe(x.d === tx ? GREEN : RED);
+    // Arrows ending at Texas are inflows (green), arrows leaving it outflows (red),
+    // unless the net isn't significant, when its direction is unknown (gray).
+    if (x.value <= x.moe) expect(x.stroke).toBe(GRAY);
+    else expect(x.stroke).toBe(x.d === tx ? GREEN : RED);
   }
   // California is Texas's largest net source in 2024 (+31,714 → "32k").
   const top = a.reduce((m, x) => (x.value > m.value ? x : m));
@@ -236,9 +240,17 @@ test('no horizontal scroll at phone width', async ({ browser }) => {
 });
 
 test('estimates within their margin of error are flagged as not significant', async ({ page }) => {
-  await open(page, '#year=2024&state=WA&top=20');
-  // WA's 2024 net (+17,404 ± 17,557) is not statistically different from zero.
+  // Pennsylvania's 2024 net (−16,233 ± 18,778) is not statistically different from zero.
+  await open(page, '#year=2024&state=PA');
+  await expect(page.locator('#stats .stat.ns')).toContainText('−16,233');
   await expect(page.locator('#stats .stat.ns')).toContainText('not significant');
+
+  // Washington's (+17,404) is significant once the published in/out margins are used
+  // (± 15,947; the square-root-of-sums approximation alone gives ± 17,557).
+  await open(page, '#year=2024&state=WA&top=20');
+  await expect(page.locator('#stats')).toContainText('+17,404');
+  await expect(page.locator('#stats')).toContainText('± 15,947');
+  await expect(page.locator('#stats .stat.ns')).toHaveCount(0);
 
   // Massachusetts: +711 ± 1,755 for WA — the 90% range spans zero.
   await page.locator('#map path.state[aria-label="Massachusetts"]').hover({ force: true });
@@ -250,15 +262,24 @@ test('estimates within their margin of error are flagged as not significant', as
   // California: +17k net to WA is significant, so not grayed.
   await expect(page.locator('#flows-table tbody tr', { hasText: 'California' }).locator('td.ns')).toHaveCount(0);
 
-  // Arrows are dashed exactly when the value is within its margin of error.
+  // Arrows are dashed and gray exactly when the net is within its margin of error,
+  // and only significant arrows carry a number.
   const a = await page.evaluate(() => [...document.querySelectorAll('#map g.arrow')].map((g) => ({
     value: g.__data__.value,
     moe: g.__data__.moe,
     dashed: g.querySelector('.shaft').hasAttribute('stroke-dasharray'),
+    stroke: g.querySelector('.shaft').getAttribute('stroke'),
   })));
   expect(a.some((x) => x.dashed)).toBe(true);
-  for (const x of a) expect(x.dashed).toBe(x.value <= x.moe);
-  await expect(page.locator('#arrow-legend')).toContainText('not statistically significant');
+  for (const x of a) {
+    expect(x.dashed).toBe(x.value <= x.moe);
+    if (x.dashed) expect(x.stroke).toBe(GRAY);
+  }
+  await expect(page.locator('#map .arrow-label')).toHaveCount(a.filter((x) => !x.dashed).length);
+  await expect(page.locator('#arrow-legend')).toContainText('direction not significant');
+  await expect(page.locator('#legend')).toContainText('Not statistically significant');
+  // Massachusetts (+711 ± 1,755 for WA) is shaded neutral, not green.
+  await expect(page.locator('#map path.state[aria-label="Massachusetts"]')).toHaveAttribute('fill', '#f0efec');
 });
 
 test('population-estimates map: green gain, red loss, measure and units toggles', async ({ page }) => {
