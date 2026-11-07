@@ -607,7 +607,7 @@ async function renderHistory() {
   } else {
     const S = app.states[sel];
     title.textContent = `${S.name}: net migration by year`;
-    sub.textContent = 'Bars: net migration with other states from the ACS 1-year tables. Dots: net domestic migration from the Vintage 2025 population estimates (July–June years). Click a bar to view that year.';
+    sub.textContent = `Bars: net migration with other states from the ACS 1-year tables. Dots: net domestic migration from the Vintage ${app.popest.vintage} population estimates (July–June years). Click a bar to view that year.`;
   }
 
   const W = 960;
@@ -829,8 +829,8 @@ function renderPopest() {
   const y = app.popestYear;
   const sub = document.getElementById('popest-sub');
   sub.textContent = y === pe.years[0]
-    ? 'Vintage 2025 estimates for April 1 – June 30, 2020 (a partial year). Net domestic = moves between states; net international includes moves from abroad.'
-    : `Vintage 2025 estimates for July 1, ${y - 1} – June 30, ${y}. Net domestic = moves between states; net international includes moves from abroad. Rates per 1,000 residents. Click a row to show that state on the map.`;
+    ? `Vintage ${pe.vintage} estimates for April 1 – June 30, ${y} (a partial year). Net domestic = moves between states; net international includes moves from abroad.`
+    : `Vintage ${pe.vintage} estimates for July 1, ${y - 1} – June 30, ${y}. Net domestic = moves between states; net international includes moves from abroad. Rates per 1,000 residents. Click a row to show that state on the map.`;
   const rows = pe.states.map((s) => {
     const i = app.byFips.get(s.fips).i;
     return {
@@ -992,6 +992,12 @@ async function main() {
     app.byFips.set(s.fips, s);
     app.byAbbr.set(s.abbr, s);
   }
+  const acsYears = index.acs.map((a) => a.year);
+  document.getElementById('acs-range').textContent = `${d3.min(acsYears)}–${d3.max(acsYears)}`;
+  for (const n of document.querySelectorAll('.pe-vintage')) n.textContent = String(popest.vintage);
+  const peLink = document.getElementById('pe-link');
+  peLink.textContent = index.popest.source.replace(/\.csv$/i, '');
+  if (index.popest.url) peLink.href = index.popest.url;
   app.year = d3.max(index.acs, (a) => a.year);
   app.popestYear = d3.max(popest.years);
   readHash();

@@ -23,6 +23,11 @@ async function open(page, hash = '') {
   await expect(page.locator('#history svg')).toBeVisible();
 }
 
+/** The site's data index (datasets, states, population-estimates metadata). */
+async function dataIndex(page) {
+  return (await page.request.get('/data/index.json')).json();
+}
+
 /** Index of a state (by postal code) in the site's state list. */
 async function idx(page, abbr) {
   const index = await (await page.request.get('/data/index.json')).json();
@@ -49,15 +54,25 @@ function arrows(page) {
 
 const hashParams = (page) => new URL(page.url()).hash.slice(1);
 
+// These tests must keep passing when the monthly data refresh adds a year, so
+// they read the newest year from the data and pin value checks to fixed years.
 test('loads with version, datasets and map', async ({ page }) => {
   await open(page);
+  const index = await dataIndex(page);
+  const latest = Math.max(...index.acs.map((a) => a.year));
   await expect(page.locator('#version')).toHaveText(`v${pkg.version}`);
   const years = await page.locator('#year option').allTextContents();
-  expect(years).toHaveLength(19);
-  expect(years[0]).toBe('ACS 1-year, 2024');
+  expect(years).toHaveLength(index.acs.length);
+  expect(years.length).toBeGreaterThanOrEqual(19);
+  expect(years[0]).toBe(`ACS 1-year, ${latest}`);
+  expect(years).toContain('ACS 1-year, 2024');
   expect(years.at(-1)).toBe('ACS 1-year, 2005');
   expect(years.some((y) => y.includes('2020'))).toBe(false);
-  await expect(page.locator('#map-title')).toHaveText('Migration between states, 2024');
+  await expect(page.locator('#map-title')).toHaveText(`Migration between states, ${latest}`);
+  await expect(page.locator('#acs-range')).toHaveText(`2005–${latest}`);
+  await expect(page.locator('.pe-vintage').first()).toHaveText(String(index.popest.vintage));
+
+  await page.selectOption('#year', '2024');
   await expect(page.locator('#stats')).toContainText('7,188,344');
 });
 
@@ -78,7 +93,7 @@ test('all-states view: neutral arrows and top-N slider', async ({ page }) => {
 });
 
 test('click a state to focus it, click again or Esc to return', async ({ page }) => {
-  await open(page);
+  await open(page, '#year=2024');
   await page.locator('#map path.state[aria-label="Montana"]').click();
   await expect(page.locator('#map-title')).toHaveText('Montana: migration with other states, 2024');
   expect(hashParams(page)).toContain('state=MT');
@@ -200,7 +215,8 @@ test('population estimates table: year picker and sorting', async ({ page }) => 
   await open(page);
   const rows = page.locator('#popest-table tbody tr');
   await expect(rows).toHaveCount(52);
-  await expect(page.locator('#popest-table thead')).toContainText('Population, July 2025');
+  const latestPe = Math.max(...(await dataIndex(page)).popest.years);
+  await expect(page.locator('#popest-table thead')).toContainText(`Population, July ${latestPe}`);
   await page.selectOption('#popest-year', '2023');
   await expect(page.locator('#popest-table thead')).toContainText('Population, July 2023');
   expect(hashParams(page)).toContain('pe=2023');
