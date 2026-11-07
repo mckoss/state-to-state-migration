@@ -1,12 +1,14 @@
 # State-to-State Migration
 
+**Live site: <https://mckoss.com/state-to-state-migration/>**
+
 An interactive map of U.S. state-to-state migration, built from the Census
 Bureau's American Community Survey (ACS) 1-year
 [state-to-state migration flow tables](https://www.census.gov/data/tables/time-series/demo/geographic-mobility/state-to-state-migration.html)
 (2005–2024) and the Vintage 2025
 [population estimates](https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/state/totals/NST-EST2025-ALLDATA.csv).
 
-Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `main`.
+Deployed to GitHub Pages (served at [mckoss.com/state-to-state-migration](https://mckoss.com/state-to-state-migration/)) by `.github/workflows/deploy.yml` on every push to `main`.
 
 ## Features
 
