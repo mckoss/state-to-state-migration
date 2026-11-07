@@ -24,8 +24,15 @@
   --no-data: #e1e0d9;
 
   /* Arrows sit on top of the fills, so they use the deepest steps. */
-  --arrow-in: #184f95;
+  --arrow-in: #12782f;
   --arrow-out: #b3262a;
+  /* Focused state: in (green) <-> out (red). */
+  --in-1: #d3efda;
+  --in-2: #8ed3a1;
+  --in-3: #34a057;
+  --in-4: #1b7537;
+  --pos-text: #1c5cab;
+  --neg-text: #b3262a;
   --arrow-neutral: #2b2a28;
   --selected-fill: #3d3c3a;
   --state-stroke: #fcfcfb;
@@ -54,8 +61,14 @@
     --loss-3: #e66767;
     --loss-4: #f4a8a6;
     --no-data: #2c2c2a;
-    --arrow-in: #b7d3f6;
+    --arrow-in: #8fe0a3;
     --arrow-out: #f7bcbb;
+    --in-1: #1c4226;
+    --in-2: #2b7340;
+    --in-3: #4cb066;
+    --in-4: #a2e3b2;
+    --pos-text: #86b6ef;
+    --neg-text: #f7bcbb;
     --arrow-neutral: #f0efec;
     --selected-fill: #d8d7d0;
     --state-stroke: #1a1a19;
@@ -83,8 +96,14 @@
   --loss-3: #e66767;
   --loss-4: #f4a8a6;
   --no-data: #2c2c2a;
-  --arrow-in: #b7d3f6;
+  --arrow-in: #8fe0a3;
   --arrow-out: #f7bcbb;
+  --in-1: #1c4226;
+  --in-2: #2b7340;
+  --in-3: #4cb066;
+  --in-4: #a2e3b2;
+  --pos-text: #86b6ef;
+  --neg-text: #f7bcbb;
   --arrow-neutral: #f0efec;
   --selected-fill: #d8d7d0;
   --state-stroke: #1a1a19;
@@ -351,7 +370,16 @@ input[type='range'] {
   cursor: pointer;
 }
 
-#map .arrow:hover .shaft,
+#map .arrow,
+#map .arrow-label {
+  transition: opacity 0.12s;
+}
+
+#map.has-hover .arrow:not(.hover),
+#map.has-hover .arrow-label:not(.hover) {
+  opacity: 0.2;
+}
+
 #map .arrow.hl .shaft {
   filter: brightness(1.25);
 }
@@ -524,11 +552,19 @@ input[type='range'] {
 }
 
 .data-table .pos {
-  color: var(--arrow-in);
+  color: var(--pos-text);
 }
 
 .data-table .neg {
-  color: var(--arrow-out);
+  color: var(--neg-text);
+}
+
+.data-table.focus .pos {
+  color: var(--arrow-in);
+}
+
+.data-table.focus .minibar span.pos {
+  background: var(--in-3);
 }
 
 .data-table td.barcell {
