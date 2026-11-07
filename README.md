@@ -1,12 +1,14 @@
 # State-to-State Migration
 
+**Live site: <https://mckoss.com/state-to-state-migration/>**
+
 An interactive map of U.S. state-to-state migration, built from the Census
 Bureau's American Community Survey (ACS) 1-year
 [state-to-state migration flow tables](https://www.census.gov/data/tables/time-series/demo/geographic-mobility/state-to-state-migration.html)
 (2005–2024) and the Vintage 2025
 [population estimates](https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/state/totals/NST-EST2025-ALLDATA.csv).
 
-Deployed to GitHub Pages by `.github/workflows/deploy.yml` on every push to `main`.
+Deployed to GitHub Pages (served at [mckoss.com/state-to-state-migration](https://mckoss.com/state-to-state-migration/)) by `.github/workflows/deploy.yml` on every push to `main`.
 
 ## Features
 
@@ -53,6 +55,22 @@ npm install
 ```bash
 npm run dev
 ```
+
+## Tests
+
+```bash
+npm test
+```
+
+```bash
+npm run build && npm run test:e2e
+```
+
+`npm test` runs the data-parser unit tests. `npm run test:e2e` runs the Playwright
+suite in `e2e/` against the production build served by `vite preview`. It covers
+map interactions, arrow colors and widths, hover tooltips, the dataset and year
+controls, table sorting, and phone layout. CI runs both before every deploy, and
+a failed run uploads the Playwright report as an artifact.
 
 Versioning follows semver: bump `package.json` (and the lockfile) once per PR with
 `npm version <patch|minor|major> --no-git-tag-version`.
