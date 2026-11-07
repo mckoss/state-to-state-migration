@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import XLSX from 'xlsx';
-import { STATES, parseGrid, stateIndex } from './build-data.mjs';
+import { STATES, latestPopestFile, parseGrid, stateIndex } from './build-data.mjs';
+import { acsLinks } from './fetch-raw.mjs';
 
 const RAW = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'raw', 'acs');
 const idx = (abbr) => STATES.findIndex((s) => s[1] === abbr);
@@ -43,4 +44,24 @@ test('long layout (2024)', () => {
   assert.equal(flow(m, 'AK', 'AL'), 387);
   assert.equal(m.moe[idx('AL')][idx('AK')], 404);
   assert.equal(flow(m, 'NC', 'PR'), null, 'suppressed "N" cells stay null');
+});
+
+test('acsLinks keeps single-year tables and skips multi-year ones', () => {
+  const html = `
+    <a href="//www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2007/state-to-state-migration/state_to_state_migrations_table_2005_2007.xls">3-yr</a>
+    <a href="//www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2007/state-to-state-migration/state_to_state_migrations_table_2007.xls">2007</a>
+    <a href="//www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2022/state-to-state-migration/State_to_State_Migration_Table_2022_T13_updated_2024_06_27.xlsx">2022</a>
+    <a href="//www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2025/state-to-state-migration/State_to_State_Migration_Table_2025_T13.xlsx">2025</a>
+    <a href="//www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2005/state-to-state-migration/state_migration_flows_tables.xls">other</a>`;
+  const links = acsLinks(html);
+  assert.deepEqual(links.map((l) => [l.year, l.ext]), [[2007, 'xls'], [2022, 'xlsx'], [2025, 'xlsx']]);
+  assert.match(links[2].url, /^https:\/\/www2\.census\.gov\/.*_2025_T13\.xlsx$/);
+});
+
+test('latestPopestFile picks the newest vintage', () => {
+  assert.deepEqual(latestPopestFile(['NST-EST2025-ALLDATA.csv', 'NST-EST2026-ALLDATA.csv', 'notes.txt']), {
+    file: 'NST-EST2026-ALLDATA.csv',
+    vintage: 2026,
+  });
+  assert.throws(() => latestPopestFile(['notes.txt']));
 });

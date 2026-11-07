@@ -1,0 +1,82 @@
+{
+  "acs/acs1_2005.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2005/state-to-state-migration/state_to_state_migrations_table_2005.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2006.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2006/state-to-state-migration/state_to_state_migrations_table_2006.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2007.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2007/state-to-state-migration/state_to_state_migrations_table_2007.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2008.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2008/state-to-state-migration/state_to_state_migrations_table_2008.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2009.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2009/state-to-state-migration/state_to_state_migrations_table_2009.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2010.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2010/state-to-state-migration/state_to_state_migrations_table_2010.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2011.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2011/state-to-state-migration/state_to_state_migrations_table_2011.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2012.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2012/state-to-state-migration/state_to_state_migrations_table_2012.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2013.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2013/state-to-state-migration/state_to_state_migrations_table_2013.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2014.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2014/state-to-state-migration/State_to_State_Migrations_Table_2014.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2015.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2015/state-to-state-migration/State_to_State_Migrations_Table_2015.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2016.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2016/state-to-state-migration/State_to_State_Migrations_Table_2016.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2017.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2017/state-to-state-migration/State_to_State_Migrations_Table_2017.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2018.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2018/state-to-state-migration/State_to_State_Migrations_Table_2018.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2019.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2019/state-to-state-migration/State_to_State_Migrations_Table_2019.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2021.xls": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2021/state-to-state-migration/State_to_State_Migrations_Table_2021.xls",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2022.xlsx": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2022/state-to-state-migration/State_to_State_Migration_Table_2022_T13_updated_2024_06_27.xlsx",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2023.xlsx": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2023/state-to-state-migration/State_to_State_Migration_Table_2023_T13.xlsx",
+    "retrieved": "2026-11-07"
+  },
+  "acs/acs1_2024.xlsx": {
+    "url": "https://www2.census.gov/programs-surveys/demo/tables/geographic-mobility/2024/state-to-state-migration/State_to_State_Migration_Table_2024_T13.xlsx",
+    "retrieved": "2026-11-07"
+  },
+  "popest/NST-EST2025-ALLDATA.csv": {
+    "url": "https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/state/totals/NST-EST2025-ALLDATA.csv",
+    "retrieved": "2026-11-07"
+  }
+}

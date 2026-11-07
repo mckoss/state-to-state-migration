@@ -1,0 +1,81 @@
+name: Update Census data
+
+# Monthly check of the Census Bureau source URLs. When a new or revised table
+# is found and the unit and end-to-end tests pass with it, this commits the new
+# files to main with a patch version bump and starts a deploy.
+on:
+  schedule:
+    - cron: '23 14 4 * *' # 14:23 UTC on the 4th of each month
+  workflow_dispatch:
+
+permissions:
+  contents: write # push the data commit to main
+  actions: write # start the deploy workflow
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - name: Check Census URLs for new or revised data
+        id: fetch
+        run: npm run fetch
+
+      - name: Unit tests and build with the new data
+        if: steps.fetch.outputs.changed == 'true'
+        run: |
+          npm test
+          npm run build
+      - name: End-to-end tests with the new data
+        if: steps.fetch.outputs.changed == 'true'
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
+      - name: Commit to main
+        if: steps.fetch.outputs.changed == 'true'
+        env:
+          SUMMARY: ${{ steps.fetch.outputs.summary }}
+        run: |
+          npm version patch --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/raw package.json package-lock.json
+          printf 'Update Census data (v%s)\n\n%s\n\nFound by the monthly data check; unit and end-to-end tests passed\nwith the new data.\n\nVersion %s.\n' "$VERSION" "$SUMMARY" "$VERSION" > "$RUNNER_TEMP/msg"
+          git commit -F "$RUNNER_TEMP/msg"
+          git push origin HEAD:main
+          echo "### Census data updated to v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
+
+      # Pushes made with GITHUB_TOKEN don't trigger other workflows, but a
+      # workflow_dispatch does. The deploy workflow re-runs every test first.
+      - name: Deploy
+        if: steps.fetch.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run deploy.yml --ref main
+
+      - name: Report no change
+        if: steps.fetch.outputs.changed != 'true'
+        run: echo "No new or revised Census data." >> "$GITHUB_STEP_SUMMARY"

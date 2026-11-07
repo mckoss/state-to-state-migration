@@ -173,8 +173,19 @@ function parseCsv(text) {
   });
 }
 
+/** The newest population-estimates vintage present in data/raw/popest/. */
+export function latestPopestFile(names) {
+  const found = names
+    .map((f) => ({ f, m: f.match(/^NST-EST(\d{4})-ALLDATA\.csv$/i) }))
+    .filter((x) => x.m)
+    .map((x) => ({ file: x.f, vintage: Number(x.m[1]) }))
+    .sort((a, b) => b.vintage - a.vintage);
+  if (!found.length) throw new Error('no NST-ESTyyyy-ALLDATA.csv in data/raw/popest');
+  return found[0];
+}
+
 function buildPopest() {
-  const file = 'NST-EST2025-ALLDATA.csv';
+  const { file, vintage } = latestPopestFile(fs.readdirSync(path.join(RAW, 'popest')));
   const rows = parseCsv(fs.readFileSync(path.join(RAW, 'popest', file), 'latin1'));
   const years = Object.keys(rows[0])
     .map((k) => k.match(/^POPESTIMATE(\d{4})$/))
@@ -200,7 +211,7 @@ function buildPopest() {
   fs.writeFileSync(
     path.join(OUT, 'popest.json'),
     JSON.stringify({
-      vintage: 2025,
+      vintage,
       source: file,
       years,
       usPopulation: years.map((y) => Number(us[`POPESTIMATE${y}`])),
@@ -208,14 +219,19 @@ function buildPopest() {
       states,
     }),
   );
-  console.log(`PopEst vintage 2025: ${states.length} states, years ${years.join(', ')}`);
-  return { vintage: 2025, file: 'popest.json', source: file, years };
+  console.log(`PopEst vintage ${vintage}: ${states.length} states, years ${years.join(', ')}`);
+  return { vintage, file: 'popest.json', source: file, years };
 }
 
 function main() {
   fs.mkdirSync(OUT, { recursive: true });
   const acs = buildAcs();
   const popest = buildPopest();
+  // Where each raw file came from, recorded by scripts/fetch-raw.mjs.
+  const sourcesFile = path.join(RAW, 'sources.json');
+  const sources = fs.existsSync(sourcesFile) ? JSON.parse(fs.readFileSync(sourcesFile, 'utf8')) : {};
+  for (const a of acs) a.url = sources[`acs/${a.source}`]?.url ?? null;
+  popest.url = sources[`popest/${popest.source}`]?.url ?? null;
   fs.writeFileSync(
     path.join(OUT, 'index.json'),
     JSON.stringify({ states: STATES.map(([fips, abbr, name]) => ({ fips, abbr, name })), acs, popest }, null, 1),

@@ -30,21 +30,39 @@ The site has no runtime dependency on census.gov. Copies of the source files liv
 `data/raw/`; `npm run data` (run automatically before `dev` and `build`) converts
 them to the JSON in `public/data/`.
 
-To pick up a newly published year:
+`data/raw/sources.json` records the URL each file came from and when it was retrieved.
+
+### Automatic monthly updates
+
+`.github/workflows/update-data.yml` runs on the 4th of each month (and on demand from
+the Actions tab). It runs `npm run fetch` (`scripts/fetch-raw.mjs`), which:
+
+- reads the [state-to-state migration page](https://www.census.gov/data/tables/time-series/demo/geographic-mobility/state-to-state-migration.html)
+  and downloads every single-year table, keeping any that are new or have changed;
+- re-checks the current population-estimates file and looks for the next vintage
+  (e.g. `NST-EST2026-ALLDATA.csv`), which replaces the current one;
+- rejects anything that isn't a real spreadsheet or CSV, such as an error page.
+
+If something changed, the workflow runs the unit tests, the build and the end-to-end
+tests with the new data. If they all pass, it bumps the patch version, commits to `main`
+and starts a deploy. If anything fails, nothing is committed and the failed run (with
+its Playwright report) shows up in the Actions tab.
+
+To run the same check locally:
 
 ```bash
-./scripts/fetch-raw.sh
+npm run fetch
 ```
 
 ```bash
-npm test && npm run build
+npm test && npm run build && npm run test:e2e
 ```
 
 The parser (`scripts/build-data.mjs`) handles both table layouts the Census Bureau has
 used: the paged matrix (2005–2023) and the long one-row-per-pair format (2024). It
-fails loudly if a table doesn't yield all 52 × 51 state pairs. When a new population
-estimates vintage is released, update the file name in `scripts/fetch-raw.sh` and
-`scripts/build-data.mjs`.
+fails loudly if a table doesn't yield all 52 × 51 state pairs, so a layout change
+stops the automatic update rather than publishing bad data. The site always uses the
+newest population-estimates vintage in `data/raw/popest/`.
 
 ## Development
 
