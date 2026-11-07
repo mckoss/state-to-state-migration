@@ -392,6 +392,25 @@ test('sentiment mode compares move rates per resident', async ({ page }) => {
   await expect(page.locator('#flows-table thead')).toContainText('Sentiment toward CA');
   await expect(page.locator('#flows-table tbody tr').first().locator('td').first()).toHaveText('Alaska');
 
+  // Washington and Arizona: 225 ± 42 vs 116 ± 35 per 100k gives 1.94x, 90% range 1.25-2.62x.
+  await page.selectOption('#state', 'WA');
+  await page.locator('#map path.state[aria-label="Arizona"]').hover({ force: true, position: { x: 40, y: 60 } });
+  const tip = page.locator('#tooltip');
+  await expect(tip).toContainText('225 ± 42 per 100k');
+  await expect(tip).toContainText('116 ± 35 per 100k');
+  await expect(tip).toContainText('1.94×');
+  await expect(tip).toContainText('1.25–2.62×');
+  await page.mouse.move(2, 2);
+  // From Washington's side the same pair is the inverse: 0.52x (0.38-0.80x).
+  const az = page.locator('#flows-table tbody tr', { hasText: 'Arizona' });
+  await expect(az).toContainText('0.52×');
+  await expect(az).toContainText('0.38–0.80×');
+  // Gray exactly when the ratio's 90% range includes 1x.
+  const sent = await page.evaluate(() => [...document.querySelectorAll('#map g.arrow')].map((g) => ({
+    sig: g.__data__.sig, kLo: g.__data__.ps.kLo,
+  })));
+  for (const x of sent) expect(x.sig).toBe(x.kLo > 1);
+
   // All states: no shading, the most lopsided pairs instead.
   await page.selectOption('#state', '');
   await expect(page.locator('#map-title')).toHaveText('Migration sentiment between states, 2024');
