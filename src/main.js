@@ -223,10 +223,10 @@ function niceStep(v) {
   return nf * p;
 }
 
-function divergingScale(values) {
+function divergingScale(values, gainVar = '--gain') {
   const max = d3.max(values, (v) => Math.abs(v)) || 1;
   const breaks = [...new Set([0.08, 0.25, 0.55].map((k) => niceStep(max * k)))].sort((a, b) => a - b);
-  const gains = ['--gain-1', '--gain-2', '--gain-3', '--gain-4'].map(css);
+  const gains = [1, 2, 3, 4].map((k) => css(`${gainVar}-${k}`));
   const losses = ['--loss-1', '--loss-2', '--loss-3', '--loss-4'].map(css);
   const bin = (a) => {
     let k = 0;
@@ -328,19 +328,35 @@ function arrowTip(event, a, m) {
   const st = app.states;
   const O = st[a.o];
   const D = st[a.d];
-  if (a.kind === 'netpair' || a.kind === 'netsel') {
+  const sel = app.sel;
+  if (a.kind === 'in' || a.kind === 'out' || a.kind === 'netsel') {
+    const S = st[sel];
+    const P = a.o === sel ? D : O;
+    const p = a.p;
+    const net = p.inflow - p.outflow;
+    const title = a.kind === 'in' ? `Into ${S.name} from ${P.name}`
+      : a.kind === 'out' ? `Out of ${S.name} to ${P.name}`
+        : `Net ${net >= 0 ? 'gain to' : 'loss from'} ${S.name}: ${P.name}`;
+    showTip(event, title, [
+      [`Into ${S.abbr} from ${P.abbr}`, p.inSup ? 'N (suppressed)' : `${fmtInt(p.inflow)} ± ${fmtInt(p.inMoe)}`, css('--arrow-in')],
+      [`Out of ${S.abbr} to ${P.abbr}`, p.outSup ? 'N (suppressed)' : `${fmtInt(p.outflow)} ± ${fmtInt(p.outMoe)}`, css('--arrow-out')],
+      [`Net for ${S.abbr}`, `${fmtSigned(net)} ± ${fmtInt(p.netMoe)}`],
+    ], `ACS ${app.year}; ± is the 90% margin of error. Click to focus on ${P.name}.`);
+    return;
+  }
+  if (a.kind === 'netpair') {
     const ab = flow(m, a.o, a.d);
     const ba = flow(m, a.d, a.o);
     showTip(event, `Net ${O.name} → ${D.name}`, [
       ['Net movers', fmtInt(a.value)],
-      [`${O.abbr} → ${D.abbr}`, `${fmtInt(ab)} ± ${fmtInt(flowMoe(m, a.o, a.d))}`, css('--arrow-in')],
-      [`${D.abbr} → ${O.abbr}`, `${fmtInt(ba)} ± ${fmtInt(flowMoe(m, a.d, a.o))}`, css('--arrow-out')],
-    ], `Margin of error on net: ± ${fmtInt(moeOf(flowMoe(m, a.o, a.d), flowMoe(m, a.d, a.o)))}. Click to focus on ${a.d === app.sel ? O.name : D.name}.`);
+      [`${O.abbr} → ${D.abbr}`, `${fmtInt(ab)} ± ${fmtInt(flowMoe(m, a.o, a.d))}`],
+      [`${D.abbr} → ${O.abbr}`, `${fmtInt(ba)} ± ${fmtInt(flowMoe(m, a.d, a.o))}`],
+    ], `Margin of error on net: ± ${fmtInt(moeOf(flowMoe(m, a.o, a.d), flowMoe(m, a.d, a.o)))}. Click to focus on ${D.name}.`);
   } else {
     showTip(event, `${O.name} → ${D.name}`, [
       ['Movers', `${fmtInt(a.value)} ± ${fmtInt(flowMoe(m, a.o, a.d))}`],
       [`Reverse (${D.abbr} → ${O.abbr})`, fmtInt(flow(m, a.d, a.o))],
-    ], `Lived in ${O.name} in ${app.year - 1}, ${D.name} in ${app.year}. Click to focus on ${a.d === app.sel ? O.name : D.name}.`);
+    ], `Lived in ${O.name} in ${app.year - 1}, ${D.name} in ${app.year}. Click to focus on ${D.name}.`);
   }
 }
 
@@ -379,7 +395,7 @@ function renderMap(m) {
     values = new Array(st.length).fill(null);
     for (const p of partners(m, sel)) values[p.i] = p.net;
   }
-  const scale = divergingScale(values.filter((v, i) => i !== sel && v !== null));
+  const scale = divergingScale(values.filter((v, i) => i !== sel && v !== null), sel < 0 ? '--gain' : '--in');
 
   gStates.selectAll('path.state')
     .classed('selected', (s) => app.byFips.get(s.fips).i === sel)
@@ -391,9 +407,9 @@ function renderMap(m) {
 
   const arrows = buildArrows(m, tot);
   const maxV = d3.max(arrows, (a) => a.value) || 1;
-  const width = d3.scaleLinear([0, maxV], [1.2, 9]);
+  const MAX_W = 10;
   for (const a of arrows) {
-    a.w = width(a.value);
+    a.w = Math.max(1, (MAX_W * a.value) / maxV);
     a.geom = arrowGeometry(
       anchors.get(st[a.o].fips),
       anchors.get(st[a.d].fips),
@@ -423,9 +439,21 @@ function renderMap(m) {
   groups.select('.shaft').attr('d', (a) => a.geom.shaft).attr('stroke-width', (a) => a.w).attr('stroke', (a) => css(a.color));
   groups.select('.head').attr('d', (a) => a.geom.head).attr('fill', (a) => css(a.color));
   groups.select('.hit').attr('d', (a) => a.geom.shaft);
+  const setHover = (a) => {
+    svg.classed('has-hover', !!a);
+    groups.classed('hover', (x) => x === a);
+    gLabels.selectAll('text').classed('hover', (x) => x === a);
+  };
   groups
+    .on('pointerenter', function (e, a) {
+      d3.select(this).raise();
+      setHover(a);
+    })
     .on('pointermove', (e, a) => arrowTip(e, a, m))
-    .on('pointerleave', hideTip)
+    .on('pointerleave', () => {
+      setHover(null);
+      hideTip();
+    })
     // Arrows cover their endpoints, so clicking one focuses the far state.
     .on('click', (e, a) => setState(a.o === sel ? a.d : a.d === sel ? a.o : a.d));
 
@@ -474,11 +502,11 @@ function renderLegend(scale) {
   } else {
     const ab = app.states[sel].abbr;
     keys = [
-      el('span', { class: 'key' }, line('--arrow-in'), app.mode === 'net' ? `Net gain to ${ab}` : `Into ${ab}`),
-      el('span', { class: 'key' }, line('--arrow-out'), app.mode === 'net' ? `Net loss from ${ab}` : `Out of ${ab}`),
+      el('span', { class: 'key' }, line('--arrow-in'), app.mode === 'net' ? `In: net gain to ${ab}` : `In: moved to ${ab}`),
+      el('span', { class: 'key' }, line('--arrow-out'), app.mode === 'net' ? `Out: net loss from ${ab}` : `Out: left ${ab}`),
     ];
   }
-  document.getElementById('arrow-legend').replaceChildren(...keys, el('span', {}, 'Width ∝ movers'));
+  document.getElementById('arrow-legend').replaceChildren(...keys, el('span', {}, 'Width proportional to movers · hover for values'));
 }
 
 function stat(label, value, moe) {
@@ -584,7 +612,7 @@ async function renderHistory() {
 
   const W = 960;
   const H = 230;
-  const M = { t: 12, r: 8, b: 26, l: 56 };
+  const M = { t: 22, r: 8, b: 26, l: 56 };
   const x = d3.scaleBand(years, [M.l, W - M.r]).padding(0.25);
   const vals = [...[...acsVals.values()].map((d) => d.v), ...peVals.values(), 0];
   const y = d3.scaleLinear(d3.extent(vals), [H - M.b, M.t]).nice();
@@ -598,7 +626,7 @@ async function renderHistory() {
       .attr('dominant-baseline', 'central').text((d) => fmtCompact(d)));
   s.append('line').attr('class', 'baseline').attr('x1', M.l).attr('x2', W - M.r).attr('y1', y(0)).attr('y2', y(0));
 
-  const barColor = (v) => (sel < 0 ? css('--accent') : v >= 0 ? css('--gain-3') : css('--loss-3'));
+  const barColor = (v) => (sel < 0 ? css('--accent') : v >= 0 ? css('--in-3') : css('--loss-3'));
   const r = Math.min(4, x.bandwidth() / 2);
   const barPath = (yr, v) => {
     const x0 = x(yr);
@@ -647,6 +675,25 @@ async function renderHistory() {
     .attr('stroke-width', 2)
     .attr('pointer-events', 'none');
 
+  // Direct label on the year shown on the map; every other value is on hover.
+  const cur = acsVals.get(app.year);
+  if (cur) {
+    const above = cur.v >= 0;
+    s.append('text')
+      .attr('x', x(app.year) + x.bandwidth() / 2)
+      // Losses are labeled at the baseline, clear of the bar end and the dots.
+      .attr('y', above ? y(cur.v) - 6 : y(0) - 6)
+      .attr('text-anchor', 'middle')
+      .style('font-size', '12px')
+      .style('font-weight', 650)
+      .style('fill', css('--text-primary'))
+      .style('paint-order', 'stroke')
+      .style('stroke', css('--surface'))
+      .style('stroke-width', '3px')
+      .style('font-variant-numeric', 'tabular-nums')
+      .text(sel < 0 ? fmtCompact(cur.v) : fmtSigned(cur.v));
+  }
+
   s.append('g').attr('class', 'tick').selectAll('text').data(years).join('text')
     .attr('x', (yr) => x(yr) + x.bandwidth() / 2)
     .attr('y', H - 8)
@@ -661,7 +708,7 @@ async function renderHistory() {
   if (sel < 0) legend.replaceChildren();
   else {
     legend.replaceChildren(
-      el('span', { class: 'key' }, el('span', { class: 'swatch', style: `background:${css('--gain-3')};width:10px` }),
+      el('span', { class: 'key' }, el('span', { class: 'swatch', style: `background:${css('--in-3')};width:10px` }),
         el('span', { class: 'swatch', style: `background:${css('--loss-3')};width:10px` }), 'ACS net (gain / loss)'),
       el('span', { class: 'key' }, el('span', { class: 'swatch', style: `background:${css('--arrow-neutral')};width:9px;height:9px;border-radius:50%` }), 'PopEst net domestic'),
     );
@@ -729,6 +776,7 @@ function renderFlowsTable(m) {
     onpointerenter: () => highlightArrows(r.i),
     onpointerleave: () => highlightArrows(-1),
   });
+  table.classList.toggle('focus', sel >= 0);
   if (sel < 0) {
     const tot = totals(m);
     const rows = tot.map((t) => ({ ...t, name: st[t.i].name }));
