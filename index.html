@@ -34,6 +34,7 @@
           <div class="segmented" role="radiogroup" aria-labelledby="mode-label">
             <button type="button" role="radio" data-mode="net" aria-checked="true">Net</button>
             <button type="button" role="radio" data-mode="both" aria-checked="false">In &amp; out</button>
+            <button type="button" role="radio" data-mode="sent" aria-checked="false">Sentiment</button>
           </div>
         </div>
         <label class="control">
@@ -118,6 +119,56 @@
         </div>
         <p class="hint">Hover a state for its components of change; click it to show its state-to-state flows on the map above.</p>
         <div class="table-wrap"><table id="popest-table" class="data-table"></table></div>
+      </section>
+
+      <section class="card notes" id="sentiment" aria-labelledby="sentiment-title">
+        <h2 id="sentiment-title">About the sentiment view</h2>
+        <p>
+          Net migration mostly tracks size: a big state sends more people everywhere simply because it has more
+          people. The <strong>Sentiment</strong> view takes size out by comparing <em>rates</em>: the share of one
+          state's residents who moved to the other state, against the share who moved the other way.
+        </p>
+        <p>
+          In 2024, 77,161 Californians moved to Texas, 197 of every 100,000 California residents. Going the
+          other way, 45,447 Texans moved to California, 148 of every 100,000 Texans. So people in California were
+          <strong>1.33&times;</strong> as likely to move to Texas as people in Texas were to move to California. On the
+          map, that's an arrow pointing to Texas labeled 1.3&times;.
+        </p>
+        <p>
+          Sentiment can point the opposite way from net migration. More people moved from California to Nevada
+          (53,289) than from Nevada to California (21,133), so Nevada gained. But Nevada has a twelfth of
+          California's population: 658 of every 100,000 Nevadans moved to California, against 136 of every 100,000
+          Californians moving to Nevada. By sentiment, Nevadans were 4.8&times; as likely to make the move, so the
+          arrow points to California.
+        </p>
+        <h3>How to read it</h3>
+        <ul>
+          <li>
+            With a state selected, partners are <strong>green</strong> when their residents moved to it at a higher
+            rate than its residents moved to them, and <strong>red</strong> when the reverse. Arrows point toward
+            the favored state and are labeled with the ratio of the two rates.
+          </li>
+          <li>
+            With all states shown, states aren't shaded. The arrows and the table show the most lopsided pairs among
+            those with at least 1,000 movers each way (per survey).
+          </li>
+          <li>
+            Rates use each state's population on July 1 of the year before the survey, when the movers still lived
+            there, from the Census Bureau's population estimates.
+          </li>
+          <li>
+            As with net figures, a ratio is gray when the difference between the two rates is within its 90% margin
+            of error (see <a href="#margins">About the &plusmn; numbers</a>).
+          </li>
+          <li>
+            <strong>Sentiment strongly favors large states.</strong> A big state offers far more jobs and homes to
+            move to, so a small state's residents move to it at a much higher rate than the reverse, even without any
+            special preference. Nearly every state favors California this way, many by 20&times; or more, and Alaska by
+            83&times; in 2024, largely because California has about 54 times Alaska's population. Sentiment is most
+            telling between states of similar size, like California and Texas, or when comparing a state's partners
+            with each other.
+          </li>
+        </ul>
       </section>
 
       <section class="card notes" id="margins" aria-labelledby="margins-title">

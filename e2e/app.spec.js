@@ -360,3 +360,42 @@ test('the ± margins are explained, and the link keeps the current view', async 
   await expect(page.locator('#map-title')).toContainText('Washington');
   await expect(page.locator('#flows-sub a[href="#margins"]')).toHaveCount(1);
 });
+
+test('sentiment mode compares move rates per resident', async ({ page }) => {
+  await open(page, '#year=2024&state=CA');
+  await page.getByRole('radio', { name: 'Sentiment' }).click();
+  expect(hashParams(page)).toContain('mode=sent');
+  await expect(page.locator('#map-title')).toHaveText('California: migration sentiment, 2024');
+  await expect(page.locator('#legend')).toContainText('Sentiment toward CA');
+
+  // Arrows point toward the favored state: green into CA, red out of it, gray if not significant.
+  const ca = await idx(page, 'CA');
+  const a = await page.evaluate(() => [...document.querySelectorAll('#map g.arrow')].map((g) => ({
+    o: g.__data__.o, d: g.__data__.d, value: g.__data__.value, sig: g.__data__.sig,
+    stroke: g.querySelector('.shaft').getAttribute('stroke'),
+  })));
+  expect(a.length).toBeGreaterThan(0);
+  for (const x of a) {
+    expect(x.value).toBeGreaterThanOrEqual(1);
+    if (!x.sig) expect(x.stroke).toBe(GRAY);
+    else expect(x.stroke).toBe(x.d === ca ? GREEN : RED);
+  }
+
+  // Nevada: 21,133 moved to CA out of ~3.2M Nevadans (658 per 100k); 53,289 moved
+  // the other way out of ~39M Californians (136 per 100k): 4.84x.
+  await page.locator('#map path.state[aria-label="Nevada"]').hover({ force: true, position: { x: 30, y: 60 } });
+  await expect(page.locator('#tooltip')).toContainText('4.84×');
+  await expect(page.locator('#tooltip')).toContainText('658');
+  await page.mouse.move(2, 2);
+
+  // The table lists rates and the ratio, strongest first.
+  await expect(page.locator('#flows-table thead')).toContainText('Sentiment toward CA');
+  await expect(page.locator('#flows-table tbody tr').first().locator('td').first()).toHaveText('Alaska');
+
+  // All states: no shading, the most lopsided pairs instead.
+  await page.selectOption('#state', '');
+  await expect(page.locator('#map-title')).toHaveText('Migration sentiment between states, 2024');
+  await expect(page.locator('#legend')).toContainText("States aren't shaded");
+  await expect(page.locator('#flows-title')).toHaveText('Most lopsided pairs of states, 2024');
+  await expect(page.locator('#sentiment h2')).toHaveText('About the sentiment view');
+});

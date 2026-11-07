@@ -342,6 +342,49 @@ function buildPopest() {
   return { vintage, file: 'popest.json', source: file, years };
 }
 
+/**
+ * July 1 population of every state for each year, the denominators for move
+ * rates: 2000-2009 from the 2000-2010 intercensal estimates, 2010-2019 from
+ * Vintage 2020, and 2020 on from the current vintage in data/raw/popest/.
+ */
+function buildPopulation() {
+  const n = STATES.length;
+  const pop = {};
+  const set = (year, i, v) => {
+    if (i < 0 || !Number.isFinite(v) || v <= 0) return;
+    (pop[year] ??= new Array(n).fill(null))[i] = v;
+  };
+  const dir = path.join(RAW, 'population');
+  const read = (f) => parseCsv(fs.readFileSync(path.join(dir, f), 'latin1'));
+  const years = (row) => Object.keys(row).map((k) => k.match(/^POPESTIMATE(\d{4})$/)).filter(Boolean).map((m) => Number(m[1]));
+  // 2000s: states and Puerto Rico, all sexes (0) and all ages (999).
+  for (const f of ['st-est00int-agesex.csv', 'prc-est00int-agesex.csv']) {
+    for (const row of read(f)) {
+      if (row.SEX !== '0' || row.AGE !== '999') continue;
+      const i = STATES.findIndex((s) => Number(s[0]) === Number(row.STATE));
+      for (const y of years(row)) if (y < 2010) set(y, i, Number(row[`POPESTIMATE${y}`]));
+    }
+  }
+  for (const row of read('nst-est2020-alldata.csv')) {
+    if (row.SUMLEV !== '040') continue;
+    const i = stateIndex(row.NAME);
+    for (const y of years(row)) if (y >= 2010 && y < 2020) set(y, i, Number(row[`POPESTIMATE${y}`]));
+  }
+  const pe = JSON.parse(fs.readFileSync(path.join(OUT, 'popest.json'), 'utf8'));
+  for (const st of pe.states) {
+    const i = STATES.findIndex((s) => s[0] === st.fips);
+    pe.years.forEach((y, k) => set(y, i, st.popestimate[k]));
+  }
+  for (const [y, arr] of Object.entries(pop)) {
+    const missing = arr.filter((v) => v === null).length;
+    if (missing) throw new Error(`population ${y}: ${missing} states missing`);
+  }
+  fs.writeFileSync(path.join(OUT, 'population.json'), JSON.stringify(pop));
+  const ys = Object.keys(pop).map(Number);
+  console.log(`Population: ${Math.min(...ys)}-${Math.max(...ys)}, ${n} states each`);
+  return pop;
+}
+
 function main() {
   // Start clean so a removed source file can't leave a stale JSON behind.
   fs.rmSync(OUT, { recursive: true, force: true });
@@ -349,6 +392,7 @@ function main() {
   const acs = buildAcs();
   const combined = buildCombined(acs);
   const popest = buildPopest();
+  buildPopulation();
   // Where each raw file came from, recorded by scripts/fetch-raw.mjs.
   const sourcesFile = path.join(RAW, 'sources.json');
   const sources = fs.existsSync(sourcesFile) ? JSON.parse(fs.readFileSync(sourcesFile, 'utf8')) : {};
