@@ -113,12 +113,25 @@ async function getJson(file) {
   return res.json();
 }
 
-async function getAcs(year) {
-  if (!app.acs.has(year)) {
-    const meta = app.index.acs.find((a) => a.year === year);
-    app.acs.set(year, getJson(meta.file));
+// A dataset key is a survey year (2024) or a combined key ('last5', 'last10').
+const comboMeta = (key) => app.index.combined?.find((c) => c.key === key) ?? null;
+const isCombined = (key = app.year) => typeof key === 'string';
+/** Short label for titles: "2024" or "2019–2024 combined". */
+const dsLabel = (key = app.year) => (isCombined(key) ? comboMeta(key).short : String(key));
+/** Survey years in a dataset. */
+const dsYears = (key = app.year) => (isCombined(key) ? comboMeta(key).years : [key]);
+function parseDsKey(v) {
+  if (comboMeta(v)) return v;
+  const y = Number(v);
+  return app.index.acs.some((a) => a.year === y) ? y : null;
+}
+
+async function getAcs(key) {
+  if (!app.acs.has(key)) {
+    const meta = isCombined(key) ? comboMeta(key) : app.index.acs.find((a) => a.year === key);
+    app.acs.set(key, getJson(meta.file));
   }
-  return app.acs.get(year);
+  return app.acs.get(key);
 }
 
 // ---------- flow math ----------
@@ -375,7 +388,7 @@ function arrowTip(event, a, m) {
       [`Net for ${S.abbr}`, `${fmtSigned(net)} ± ${fmtInt(p.netMoe)}`],
     ], [
       a.kind === 'netsel' ? rangeNote(net, p.netMoe) : rangeNote(a.value, a.moe, 'flow'),
-      `ACS ${app.year}; ± is the 90% margin of error. Click to focus on ${P.name}.`,
+      `ACS ${isCombined() ? comboMeta(app.year).label : app.year}; ± is the 90% margin of error. Click to focus on ${P.name}.`,
     ]);
     return;
   }
@@ -392,7 +405,9 @@ function arrowTip(event, a, m) {
     showTip(event, `${O.name} → ${D.name}`, [
       ['Movers', `${fmtInt(a.value)} ± ${fmtInt(flowMoe(m, a.o, a.d))}`],
       [`Reverse (${D.abbr} → ${O.abbr})`, fmtInt(flow(m, a.d, a.o))],
-    ], [rangeNote(a.value, a.moe, 'flow'), `Lived in ${O.name} in ${app.year - 1}, ${D.name} in ${app.year}. Click to focus on ${D.name}.`]);
+    ], [rangeNote(a.value, a.moe, 'flow'), isCombined()
+      ? `Moves from ${O.name} to ${D.name}, summed over the ${dsYears().length} surveys ${dsLabel().replace(' combined', '')}. Click to focus on ${D.name}.`
+      : `Lived in ${O.name} in ${app.year - 1}, ${D.name} in ${app.year}. Click to focus on ${D.name}.`]);
   }
 }
 
@@ -578,7 +593,7 @@ function stat(label, value, moe, ns = false) {
 
 function renderHeader(tot) {
   const sel = app.sel;
-  const y = app.year;
+  const y = dsLabel();
   const title = document.getElementById('map-title');
   const sub = document.getElementById('map-sub');
   const stats = document.getElementById('stats');
@@ -588,7 +603,7 @@ function renderHeader(tot) {
       ? `States shaded by net interstate migration. Arrows: the ${app.topN} largest net flows between two states.`
       : `States shaded by net interstate migration. Arrows: the ${app.topN} largest one-way flows.`;
     const movers = d3.sum(tot, (t) => t.inflow);
-    stats.replaceChildren(stat('Interstate movers', fmtInt(movers)));
+    stats.replaceChildren(stat(isCombined() ? `Interstate moves, ${dsYears().length} surveys` : 'Interstate movers', fmtInt(movers)));
   } else {
     const S = app.states[sel];
     const t = tot[sel];
@@ -717,7 +732,7 @@ async function renderHistory() {
     .attr('class', 'bar')
     .attr('d', (yr) => barPath(yr, acsVals.get(yr).v))
     .attr('fill', (yr) => barColor(acsVals.get(yr).v, acsVals.get(yr).moe))
-    .attr('opacity', (yr) => (yr === app.year ? 1 : 0.55))
+    .attr('opacity', (yr) => (dsYears().includes(yr) ? 1 : 0.55))
     .on('click', (e, yr) => setYear(yr))
     .on('pointermove', tipFor)
     .on('pointerleave', hideTip);
@@ -740,7 +755,7 @@ async function renderHistory() {
     .attr('pointer-events', 'none');
 
   // Direct label on the year shown on the map; every other value is on hover.
-  const cur = acsVals.get(app.year);
+  const cur = isCombined() ? null : acsVals.get(app.year);
   if (cur) {
     const above = cur.v >= 0;
     s.append('text')
@@ -762,8 +777,8 @@ async function renderHistory() {
     .attr('x', (yr) => x(yr) + x.bandwidth() / 2)
     .attr('y', H - 8)
     .attr('text-anchor', 'middle')
-    .style('font-weight', (yr) => (yr === app.year ? 700 : 400))
-    .style('fill', (yr) => (yr === app.year ? css('--text-primary') : null))
+    .style('font-weight', (yr) => (dsYears().includes(yr) ? 700 : 400))
+    .style('fill', (yr) => (dsYears().includes(yr) ? css('--text-primary') : null))
     .text((yr) => (years.length > 14 ? `'${String(yr).slice(2)}` : yr));
 
   box.replaceChildren(s.node());
@@ -849,7 +864,7 @@ function renderFlowsTable(m) {
     const tot = totals(m);
     const rows = tot.map((t) => ({ ...t, name: st[t.i].name }));
     const max = d3.max(rows, (r) => Math.abs(r.net));
-    title.textContent = `All states, ${app.year}`;
+    title.textContent = `All states, ${dsLabel()}`;
     sub.textContent = `People who moved in from, and out to, other states (including D.C. and Puerto Rico). ${NS_NOTE} Click a row to focus on a state.`;
     sortableTable(table, 'flowsAll', [
       { key: 'name', label: 'State' },
@@ -866,7 +881,7 @@ function renderFlowsTable(m) {
     const rows = partners(m, sel).map((p) => ({ ...p, name: st[p.i].name }));
     const max = d3.max(rows, (r) => Math.abs(r.net));
     const sup = (flag, v) => (flag ? 'N' : fmtInt(v));
-    title.textContent = `${S.name} and each other state, ${app.year}`;
+    title.textContent = `${S.name} and each other state, ${dsLabel()}`;
     sub.textContent = `Moved in: lived in the partner state a year earlier and in ${S.name} now. N = suppressed by the Census Bureau. ${NS_NOTE} Click a row to switch to that state.`;
     const t = totals(m)[sel];
     sortableTable(table, 'flowsSel', [
@@ -1087,8 +1102,8 @@ function writeHash() {
 
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
-  const y = Number(p.get('year'));
-  if (app.index.acs.some((a) => a.year === y)) app.year = y;
+  const key = parseDsKey(p.get('year'));
+  if (key !== null) app.year = key;
   const s = app.byAbbr.get((p.get('state') || '').toUpperCase());
   app.sel = s ? s.i : -1;
   app.mode = p.get('mode') === 'both' ? 'both' : 'net';
@@ -1140,16 +1155,19 @@ function toggleState(i) {
 }
 
 function initControls() {
-  for (const a of [...app.index.acs].sort((x, y) => y.year - x.year)) {
-    yearSel.append(el('option', { value: a.year }, `ACS 1-year, ${a.year}`));
-  }
+  const single = el('optgroup', { label: 'Single year' },
+    [...app.index.acs].sort((x, y) => y.year - x.year).map((a) => el('option', { value: a.year }, `ACS 1-year, ${a.year}`)));
+  const combos = app.index.combined?.length
+    ? el('optgroup', { label: 'Combined' }, app.index.combined.map((c) => el('option', { value: c.key }, c.label)))
+    : null;
+  yearSel.append(single, ...(combos ? [combos] : []));
   for (const s of [...app.states].sort((a, b) => a.name.localeCompare(b.name))) {
     stateSel.append(el('option', { value: s.abbr }, s.name));
   }
   for (const y of [...app.popest.years].sort((a, b) => b - a)) {
     popestSel.append(el('option', { value: y }, y === app.popest.years[0] ? `${y} (Apr–Jun)` : `${y - 1}–${String(y).slice(2)}`));
   }
-  yearSel.addEventListener('change', () => setYear(Number(yearSel.value)));
+  yearSel.addEventListener('change', () => setYear(parseDsKey(yearSel.value)));
   stateSel.addEventListener('change', () => setState(stateSel.value ? app.byAbbr.get(stateSel.value).i : -1));
   popestSel.addEventListener('change', () => {
     app.popestYear = Number(popestSel.value);

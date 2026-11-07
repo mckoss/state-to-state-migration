@@ -17,6 +17,8 @@ Deployed to GitHub Pages (served at [mckoss.com/state-to-state-migration](https:
 - **One state:** pick a state (dropdown or click the map) to see its partners. *Net* shows one
   arrow per partner in the direction of the net flow; *In & out* shows both opposing flows.
 - Dataset picker for every ACS 1-year release since 2005 (there is no 2020 table).
+- Combined datasets that add up the most recent 5 and 10 yearly tables, for the longer-run
+  picture (they count moves, so someone who moved twice counts twice).
 - Year-by-year chart for the selected state, comparing ACS net migration with the
   population estimates' net domestic migration.
 - Sortable tables with margins of error, and a summary table of the latest population

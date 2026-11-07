@@ -63,7 +63,8 @@ test('loads with version, datasets and map', async ({ page }) => {
   const index = await dataIndex(page);
   const latest = Math.max(...index.acs.map((a) => a.year));
   await expect(page.locator('#version')).toHaveText(`v${pkg.version}`);
-  const years = await page.locator('#year option').allTextContents();
+  const years = await page.locator('#year optgroup[label="Single year"] option').allTextContents();
+  await expect(page.locator('#year optgroup[label="Combined"] option')).toHaveCount(index.combined.length);
   expect(years).toHaveLength(index.acs.length);
   expect(years.length).toBeGreaterThanOrEqual(19);
   expect(years[0]).toBe(`ACS 1-year, ${latest}`);
@@ -313,4 +314,37 @@ test('population-estimates map: green gain, red loss, measure and units toggles'
   await page.locator('#pe-map path.state[aria-label="Idaho"]').click({ force: true });
   await expect(page.locator('#map-title')).toContainText('Idaho');
   await expect(page.locator('#pe-map path.state.selected')).toHaveAttribute('aria-label', 'Idaho');
+});
+
+test('combined datasets sum the last 5 and 10 surveys', async ({ page }) => {
+  await open(page, '#year=2024');
+  const index = await dataIndex(page);
+  const last5 = index.combined.find((c) => c.key === 'last5');
+  const last10 = index.combined.find((c) => c.key === 'last10');
+  expect(last5.years).toHaveLength(5);
+  expect(last10.years).toHaveLength(10);
+  expect(last5.years).not.toContain(2020);
+
+  // The combined total equals the sum of the yearly totals.
+  const yearly = Object.fromEntries(index.acs.map((a) => [a.year, a.interstateMovers]));
+  expect(last5.interstateMovers).toBe(last5.years.reduce((s, y) => s + yearly[y], 0));
+
+  await page.selectOption('#year', 'last10');
+  const span = `${last10.years[0]}–${last10.years.at(-1)}`;
+  await expect(page.locator('#map-title')).toHaveText(`Migration between states, ${span} combined`);
+  await expect(page.locator('#stats')).toContainText(last10.interstateMovers.toLocaleString('en-US'));
+  expect(hashParams(page)).toContain('year=last10');
+  await expect(page.locator('#map g.arrow')).toHaveCount(12);
+
+  // One state: the year chart highlights the surveys included.
+  await page.selectOption('#state', 'TX');
+  await expect(page.locator('#map-title')).toHaveText(`Texas: migration with other states, ${span} combined`);
+  await expect(page.locator('#flows-title')).toContainText(`${span} combined`);
+  const bold = await page.locator('#history svg .tick text').evaluateAll((ts) =>
+    ts.filter((t) => t.style.fontWeight === '700').map((t) => t.textContent));
+  expect(bold).toHaveLength(10);
+
+  // Clicking a year bar returns to that single year.
+  await page.locator('#history svg rect').nth(19).click(); // 2024
+  await expect(page.locator('#map-title')).toHaveText('Texas: migration with other states, 2024');
 });

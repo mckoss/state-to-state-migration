@@ -213,6 +213,75 @@ function buildAcs() {
   return years;
 }
 
+/**
+ * Sums several years of ACS flows into one dataset. Flow MOEs combine as the
+ * root sum of squares; a cell suppressed in some years counts as zero there and
+ * stays null only if it was suppressed in every year. State total MOEs combine
+ * each year's published total MOE, or its root-sum-of-squares approximation.
+ */
+export function combineYears(datasets) {
+  const n = STATES.length;
+  const est = Array.from({ length: n }, () => new Array(n).fill(null));
+  const moe = Array.from({ length: n }, () => new Array(n).fill(null));
+  const inVar = new Array(n).fill(0);
+  const outVar = new Array(n).fill(0);
+  for (const ds of datasets) {
+    for (let d = 0; d < n; d++) {
+      for (let o = 0; o < n; o++) {
+        if (d === o) continue;
+        if (ds.est[d][o] !== null) est[d][o] = (est[d][o] ?? 0) + ds.est[d][o];
+        if (ds.moe[d][o] !== null) moe[d][o] = (moe[d][o] ?? 0) + ds.moe[d][o] ** 2;
+      }
+    }
+    for (let i = 0; i < n; i++) {
+      let vi = 0;
+      let vo = 0;
+      for (let j = 0; j < n; j++) {
+        if (j === i) continue;
+        vi += (ds.moe[i][j] ?? 0) ** 2;
+        vo += (ds.moe[j][i] ?? 0) ** 2;
+      }
+      inVar[i] += (ds.inMoe?.[i] ?? Math.sqrt(vi)) ** 2;
+      outVar[i] += (ds.outMoe?.[i] ?? Math.sqrt(vo)) ** 2;
+    }
+  }
+  for (const row of moe) for (let k = 0; k < n; k++) if (row[k] !== null) row[k] = Math.round(Math.sqrt(row[k]));
+  return {
+    est,
+    moe,
+    inMoe: inVar.map((v) => Math.round(Math.sqrt(v))),
+    outMoe: outVar.map((v) => Math.round(Math.sqrt(v))),
+  };
+}
+
+function buildCombined(acs) {
+  const combined = [];
+  for (const count of [5, 10]) {
+    const pick = [...acs].sort((a, b) => b.year - a.year).slice(0, count).sort((a, b) => a.year - b.year);
+    if (pick.length < count) continue;
+    const years = pick.map((a) => a.year);
+    const data = pick.map((a) => JSON.parse(fs.readFileSync(path.join(OUT, a.file), 'utf8')));
+    const c = combineYears(data);
+    const key = `last${count}`;
+    const span = `${years[0]}–${years.at(-1)}`;
+    const missing = [];
+    for (let y = years[0]; y <= years.at(-1); y++) if (!years.includes(y)) missing.push(y);
+    fs.writeFileSync(path.join(OUT, `acs-${key}.json`), JSON.stringify({ key, years, ...c }));
+    let total = 0;
+    for (const row of c.est) for (const v of row) total += v ?? 0;
+    combined.push({
+      key,
+      file: `acs-${key}.json`,
+      years,
+      label: `${span}, ${count} surveys combined${missing.length ? ` (no ${missing.join(', ')})` : ''}`,
+      short: `${span} combined`,
+      interstateMovers: total,
+    });
+    console.log(`ACS ${key}: ${years.join(', ')} — ${total.toLocaleString()} interstate moves`);
+  }
+  return combined;
+}
+
 function parseCsv(text) {
   const lines = text.replace(/^﻿/, '').trim().split(/\r?\n/);
   const head = lines[0].split(',');
@@ -278,6 +347,7 @@ function main() {
   fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
   const acs = buildAcs();
+  const combined = buildCombined(acs);
   const popest = buildPopest();
   // Where each raw file came from, recorded by scripts/fetch-raw.mjs.
   const sourcesFile = path.join(RAW, 'sources.json');
@@ -286,7 +356,7 @@ function main() {
   popest.url = sources[`popest/${popest.source}`]?.url ?? null;
   fs.writeFileSync(
     path.join(OUT, 'index.json'),
-    JSON.stringify({ states: STATES.map(([fips, abbr, name]) => ({ fips, abbr, name })), acs, popest }, null, 1),
+    JSON.stringify({ states: STATES.map(([fips, abbr, name]) => ({ fips, abbr, name })), acs, combined, popest }, null, 1),
   );
 }
 
