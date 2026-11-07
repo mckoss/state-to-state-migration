@@ -92,6 +92,31 @@
             <select id="popest-year"></select>
           </label>
         </div>
+        <div class="pe-controls">
+          <div class="control">
+            <span id="pe-measure-label">Measure</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="pe-measure-label" id="pe-measure">
+              <button type="button" role="radio" data-value="netmig" aria-checked="true">Net migration</button>
+              <button type="button" role="radio" data-value="domesticmig" aria-checked="false">Domestic</button>
+              <button type="button" role="radio" data-value="internationalmig" aria-checked="false">International</button>
+            </div>
+          </div>
+          <div class="control">
+            <span id="pe-units-label">Units</span>
+            <div class="segmented" role="radiogroup" aria-labelledby="pe-units-label" id="pe-units">
+              <button type="button" role="radio" data-value="people" aria-checked="true">People</button>
+              <button type="button" role="radio" data-value="rate" aria-checked="false">Per 1,000 residents</button>
+            </div>
+          </div>
+        </div>
+        <h3 class="pe-map-title" id="pe-map-title"></h3>
+        <div class="map-wrap">
+          <svg id="pe-map" viewBox="0 0 975 610" role="img" aria-labelledby="pe-map-title"></svg>
+        </div>
+        <div class="legend-row">
+          <div id="pe-legend" class="legend"></div>
+        </div>
+        <p class="hint">Hover a state for its components of change; click it to show its state-to-state flows on the map above.</p>
         <div class="table-wrap"><table id="popest-table" class="data-table"></table></div>
       </section>
 

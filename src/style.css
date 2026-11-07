@@ -225,13 +225,16 @@ select {
   border-radius: 0;
 }
 
+.segmented button + button {
+  border-left: none;
+}
+
 .segmented button:first-child {
   border-radius: 6px 0 0 6px;
 }
 
 .segmented button:last-child {
   border-radius: 0 6px 6px 0;
-  border-left: none;
 }
 
 .segmented button[aria-checked='true'] {
@@ -440,6 +443,68 @@ input[type='range'] {
 
 .legend svg {
   display: block;
+}
+
+.pe-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin: 4px 0 12px;
+}
+
+.pe-map-title {
+  font-size: 0.95rem;
+  margin: 0 0 4px;
+}
+
+#pe-map {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+#pe-map .state {
+  stroke: var(--state-stroke);
+  stroke-width: 0.8;
+  cursor: pointer;
+}
+
+#pe-map .state:hover,
+#pe-map .state:focus-visible {
+  stroke: var(--text-primary);
+  stroke-width: 1.5;
+  outline: none;
+}
+
+#pe-map .state.selected {
+  stroke: var(--text-primary);
+  stroke-width: 2;
+}
+
+#pe-map .abbr {
+  font-size: 9px;
+  fill: var(--text-secondary);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+}
+
+#pe-map .val {
+  font-size: 8.5px;
+  font-weight: 600;
+  fill: var(--text-primary);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 2.5px;
+  stroke-linejoin: round;
+  font-variant-numeric: tabular-nums;
 }
 
 .hint {

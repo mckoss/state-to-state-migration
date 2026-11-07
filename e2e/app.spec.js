@@ -260,3 +260,36 @@ test('estimates within their margin of error are flagged as not significant', as
   for (const x of a) expect(x.dashed).toBe(x.value <= x.moe);
   await expect(page.locator('#arrow-legend')).toContainText('not statistically significant');
 });
+
+test('population-estimates map: green gain, red loss, measure and units toggles', async ({ page }) => {
+  await open(page);
+  const latestPe = Math.max(...(await dataIndex(page)).popest.years);
+  await expect(page.locator('#pe-map path.state')).toHaveCount(52);
+  await expect(page.locator('#pe-map-title')).toHaveText(`Net migration, July ${latestPe - 1} – June ${latestPe}`);
+
+  // Pinned to the 2024-25 estimates: Texas gained, California lost (total net migration).
+  await page.selectOption('#popest-year', '2025');
+  const fill = (name) => page.locator(`#pe-map path.state[aria-label="${name}"]`).getAttribute('fill');
+  const gains = ['#d3efda', '#8ed3a1', '#34a057', '#1b7537']; // --in-1..4 (light)
+  const losses = ['#f9d3d1', '#ef9391', '#dc4c4b', '#a82c2c']; // --loss-1..4 (light)
+  expect(gains).toContain(await fill('Texas'));
+  expect(losses).toContain(await fill('California'));
+
+  await page.locator('#pe-map path.state[aria-label="Texas"]').hover({ force: true });
+  await expect(page.locator('#tooltip')).toContainText('Net migration');
+  await expect(page.locator('#tooltip')).toContainText('International');
+  await page.mouse.move(2, 2);
+
+  await page.locator('#pe-measure').getByRole('radio', { name: 'Domestic' }).click();
+  await page.locator('#pe-units').getByRole('radio', { name: 'Per 1,000 residents' }).click();
+  await expect(page.locator('#pe-map-title')).toContainText('Net domestic migration per 1,000 residents');
+  expect(hashParams(page)).toContain('pem=domestic');
+  expect(hashParams(page)).toContain('peu=rate');
+  // The top "Arrows" toggle is unaffected by the map's toggles.
+  await expect(page.getByRole('radio', { name: 'Net', exact: true })).toHaveAttribute('aria-checked', 'true');
+
+  // Clicking a state focuses it on the flow map above.
+  await page.locator('#pe-map path.state[aria-label="Idaho"]').click({ force: true });
+  await expect(page.locator('#map-title')).toContainText('Idaho');
+  await expect(page.locator('#pe-map path.state.selected')).toHaveAttribute('aria-label', 'Idaho');
+});

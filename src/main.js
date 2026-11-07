@@ -102,6 +102,8 @@ const app = {
   mode: 'net',
   topN: 12,
   popestYear: null,
+  peMeasure: 'netmig',
+  peUnits: 'people',
   sorts: { flows: null, popest: { key: 'domesticmig', dir: -1 } },
 };
 
@@ -192,15 +194,19 @@ const PR_POS = [880, 585];
 const anchors = new Map();
 const PR_FIPS = '72';
 
+const shapes = [
+  ...statesGeo.map((f) => ({ fips: f.id, d: path(f) })),
+  // Puerto Rico is not in the Albers USA projection; draw a placeholder tile.
+  { fips: PR_FIPS, d: `M${PR_POS[0] - 11},${PR_POS[1] - 7}h22v14h-22z` },
+];
+// Too small to label without overlapping their neighbors.
+const SKIP_LABEL = new Set(['11', '44', '10']);
+const labelY = (s) => (s.fips === PR_FIPS ? PR_POS[1] + 16 : anchors.get(s.fips)[1]);
+
 function initMap() {
   for (const f of statesGeo) anchors.set(f.id, ANCHOR_OVERRIDES[f.id] || path.centroid(f));
   anchors.set(PR_FIPS, PR_POS);
 
-  const shapes = [
-    ...statesGeo.map((f) => ({ fips: f.id, d: path(f) })),
-    // Puerto Rico is not in the Albers USA projection; draw a placeholder tile.
-    { fips: PR_FIPS, d: `M${PR_POS[0] - 11},${PR_POS[1] - 7}h22v14h-22z` },
-  ];
   gStates.selectAll('path')
     .data(shapes)
     .join('path')
@@ -222,13 +228,12 @@ function initMap() {
     })
     .on('pointerleave blur', hideTip);
 
-  const SKIP_LABEL = new Set(['11', '44', '10']);
   gAbbr.selectAll('text')
     .data(shapes.filter((s) => !SKIP_LABEL.has(s.fips)))
     .join('text')
     .attr('class', 'abbr')
     .attr('x', (s) => anchors.get(s.fips)[0])
-    .attr('y', (s) => (s.fips === PR_FIPS ? PR_POS[1] + 16 : anchors.get(s.fips)[1]))
+    .attr('y', labelY)
     .text((s) => app.byFips.get(s.fips).abbr);
 }
 
@@ -910,13 +915,135 @@ function renderPopest() {
   }));
 }
 
+// ---------- population-estimates map ----------
+const PE_MEASURES = {
+  netmig: { label: 'Net migration', rate: 'rnetmig', short: 'net' },
+  domesticmig: { label: 'Net domestic migration', rate: 'rdomesticmig', short: 'domestic' },
+  internationalmig: { label: 'Net international migration', rate: 'rinternationalmig', short: 'international' },
+};
+const peSvg = d3.select('#pe-map');
+const fmtSignedCompact = (v) => (v > 0 ? '+' : '') + fmtCompact(v);
+const fmtBreak = (v) => (Math.abs(v) < 100 ? String(+v.toFixed(1)) : fmtCompact(v));
+
+function pePeriod(y) {
+  return y === app.popest.years[0] ? `April–June ${y}` : `July ${y - 1} – June ${y}`;
+}
+
+function initPeMap() {
+  const stateOf = (s) => app.byFips.get(s.fips).i;
+  peSvg.append('g').selectAll('path')
+    .data(shapes)
+    .join('path')
+    .attr('class', 'state')
+    .attr('d', (s) => s.d)
+    .attr('tabindex', 0)
+    .attr('role', 'button')
+    .attr('aria-label', (s) => app.byFips.get(s.fips).name)
+    .on('click', (e, s) => focusFromPe(stateOf(s)))
+    .on('keydown', (e, s) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        focusFromPe(stateOf(s));
+      }
+    })
+    .on('pointermove', (e, s) => peTip(e, stateOf(s)))
+    .on('focus', function (e, s) {
+      peTip(null, stateOf(s), this);
+    })
+    .on('pointerleave blur', hideTip);
+
+  // Values are printed only on states big enough to hold them; the rest are on hover.
+  const roomy = new Set(statesGeo.filter((f) => {
+    const [[x0, y0], [x1, y1]] = path.bounds(f);
+    return x1 - x0 > 42 && y1 - y0 > 28;
+  }).map((f) => f.id));
+  const labelled = shapes.filter((sh) => !SKIP_LABEL.has(sh.fips));
+  const g = peSvg.append('g');
+  g.selectAll('text.abbr').data(labelled).join('text')
+    .attr('class', 'abbr')
+    .attr('x', (sh) => anchors.get(sh.fips)[0])
+    .attr('y', (sh) => labelY(sh) - (roomy.has(sh.fips) ? 6 : 0))
+    .text((sh) => app.byFips.get(sh.fips).abbr);
+  g.selectAll('text.val').data(labelled.filter((sh) => roomy.has(sh.fips))).join('text')
+    .attr('class', 'val')
+    .attr('x', (sh) => anchors.get(sh.fips)[0])
+    .attr('y', (sh) => labelY(sh) + 5);
+}
+
+function peValues() {
+  const pe = app.popest;
+  const k = pe.years.indexOf(app.popestYear);
+  const key = app.peUnits === 'rate' ? PE_MEASURES[app.peMeasure].rate : app.peMeasure;
+  const vals = new Map();
+  for (const st of pe.states) vals.set(app.byFips.get(st.fips).i, st[key][k] ?? null);
+  return vals;
+}
+
+function renderPeMap() {
+  const rate = app.peUnits === 'rate';
+  const meas = PE_MEASURES[app.peMeasure];
+  const vals = peValues();
+  const scale = divergingScale([...vals.values()].filter((v) => v !== null), '--in');
+  const idx = (sh) => app.byFips.get(sh.fips).i;
+  peSvg.selectAll('path.state')
+    .attr('fill', (sh) => scale.color(vals.get(idx(sh))))
+    .classed('selected', (sh) => idx(sh) === app.sel);
+  peSvg.selectAll('text.val').text((sh) => {
+    const v = vals.get(idx(sh));
+    if (v === null || v === undefined) return '';
+    return rate ? fmtRate(v) : fmtSignedCompact(v);
+  });
+
+  document.getElementById('pe-map-title').textContent =
+    `${meas.label}${rate ? ' per 1,000 residents' : ''}, ${pePeriod(app.popestYear)}`;
+  for (const [id, cur] of [['pe-measure', app.peMeasure], ['pe-units', app.peUnits]]) {
+    for (const b of document.querySelectorAll(`#${id} button`)) b.setAttribute('aria-checked', String(b.dataset.value === cur));
+  }
+
+  const sw = (c) => el('span', { class: 'swatch', style: `background:${c}` });
+  const missing = [...vals.values()].every((v) => v === null);
+  document.getElementById('pe-legend').replaceChildren(
+    el('div', { class: 'scale' },
+      el('span', {}, rate ? `${meas.label} per 1,000` : meas.label),
+      el('span', {}, 'Loss'),
+      el('span', { class: 'swatches' }, [...scale.losses].reverse().map(sw), sw(css('--div-mid')), scale.gains.map(sw)),
+      el('span', {}, 'Gain')),
+    missing
+      ? el('span', {}, 'Rates are not published for the partial 2020 period.')
+      : el('span', {}, `Steps: ${scale.breaks.map(fmtBreak).join(' · ')}`),
+  );
+}
+
+function peTip(event, i, node) {
+  const pe = app.popest;
+  const k = pe.years.indexOf(app.popestYear);
+  const st = pe.states.find((x) => x.fips === app.states[i].fips);
+  if (!st) return;
+  const withRate = (v, r) => (r === null || r === undefined ? fmtSigned(v) : `${fmtSigned(v)}  (${fmtRate(r)}/1k)`);
+  const rows = [
+    ['Net migration', withRate(st.netmig[k], st.rnetmig[k])],
+    ['Domestic (other states)', withRate(st.domesticmig[k], st.rdomesticmig[k])],
+    ['International', withRate(st.internationalmig[k], st.rinternationalmig[k])],
+    ['Births − deaths', fmtSigned(st.naturalchg[k])],
+    [`Population, July ${app.popestYear}`, fmtInt(st.popestimate[k])],
+  ];
+  const note = [`Vintage ${pe.vintage} estimates, ${pePeriod(app.popestYear)}.`, 'Click to show this state\'s flows on the map above.'];
+  if (node) tipAtElement(node, app.states[i].name, rows, note);
+  else showTip(event, app.states[i].name, rows, note);
+}
+
+function focusFromPe(i) {
+  setState(i);
+  document.querySelector('.map-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 // ---------- controls & routing ----------
 const yearSel = document.getElementById('year');
 const stateSel = document.getElementById('state');
 const popestSel = document.getElementById('popest-year');
 const topN = document.getElementById('topn');
 const topNOut = document.getElementById('topn-out');
-const modeBtns = [...document.querySelectorAll('.segmented button')];
+const modeBtns = [...document.querySelectorAll('.controls .segmented button')];
 
 function writeHash() {
   const p = new URLSearchParams();
@@ -925,6 +1052,8 @@ function writeHash() {
   if (app.mode !== 'net') p.set('mode', app.mode);
   if (app.topN !== 12) p.set('top', app.topN);
   if (app.popestYear !== d3.max(app.popest.years)) p.set('pe', app.popestYear);
+  if (app.peMeasure !== 'netmig') p.set('pem', PE_MEASURES[app.peMeasure].short);
+  if (app.peUnits === 'rate') p.set('peu', 'rate');
   history.replaceState(null, '', `#${p}`);
 }
 
@@ -939,6 +1068,9 @@ function readHash() {
   if (t >= 3 && t <= 30) app.topN = t;
   const pe = Number(p.get('pe'));
   if (app.popest.years.includes(pe)) app.popestYear = pe;
+  const pem = Object.keys(PE_MEASURES).find((key) => PE_MEASURES[key].short === p.get('pem'));
+  app.peMeasure = pem || 'netmig';
+  app.peUnits = p.get('peu') === 'rate' ? 'rate' : 'people';
 }
 
 function syncControls() {
@@ -963,6 +1095,7 @@ async function render({ history = true } = {}) {
   renderMap(m);
   renderFlowsTable(m);
   renderPopest();
+  renderPeMap();
   if (history) await renderHistory();
 }
 
@@ -994,7 +1127,17 @@ function initControls() {
     app.popestYear = Number(popestSel.value);
     writeHash();
     renderPopest();
+    renderPeMap();
   });
+  for (const [id, prop] of [['pe-measure', 'peMeasure'], ['pe-units', 'peUnits']]) {
+    for (const b of document.querySelectorAll(`#${id} button`)) {
+      b.addEventListener('click', () => {
+        app[prop] = b.dataset.value;
+        writeHash();
+        renderPeMap();
+      });
+    }
+  }
   topN.addEventListener('input', () => {
     app.topN = Number(topN.value);
     topNOut.textContent = topN.value;
@@ -1037,6 +1180,7 @@ async function main() {
   app.popestYear = d3.max(popest.years);
   readHash();
   initMap();
+  initPeMap();
   initControls();
   await render();
 }
