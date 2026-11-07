@@ -17,6 +17,11 @@ const RAW = path.join(ROOT, 'data', 'raw');
 const SOURCES = path.join(RAW, 'sources.json');
 export const PAGE = 'https://www.census.gov/data/tables/time-series/demo/geographic-mobility/state-to-state-migration.html';
 const POPEST_BASE = 'https://www2.census.gov/programs-surveys/popest/datasets';
+const HISTORICAL_POPULATION = [
+  ['population/st-est00int-agesex.csv', `${POPEST_BASE}/2000-2010/intercensal/state/st-est00int-agesex.csv`],
+  ['population/prc-est00int-agesex.csv', `${POPEST_BASE}/2000-2010/intercensal/puerto-rico/prc-est00int-agesex.csv`],
+  ['population/nst-est2020-alldata.csv', `${POPEST_BASE}/2010-2020/state/totals/nst-est2020-alldata.csv`],
+];
 const UA = 'state-to-state-migration data refresh (+https://github.com/mckoss/state-to-state-migration)';
 
 async function get(url, { allow404 = false } = {}) {
@@ -43,7 +48,7 @@ export function acsLinks(html) {
 function looksValid(name, buf) {
   if (name.endsWith('.xls')) return buf.subarray(0, 4).toString('hex') === 'd0cf11e0';
   if (name.endsWith('.xlsx')) return buf.subarray(0, 2).toString() === 'PK';
-  if (name.endsWith('.csv')) return buf.subarray(0, 6).toString() === 'SUMLEV';
+  if (name.endsWith('.csv')) return buf.subarray(0, 600).toString().includes('POPESTIMATE');
   return false;
 }
 
@@ -88,6 +93,11 @@ async function main() {
         delete sources[`acs/${f}`];
       }
     }
+  }
+
+  // Historical population estimates (the denominators for move rates before 2020).
+  for (const [rel, url] of HISTORICAL_POPULATION) {
+    save(rel, url, await get(url), `population estimates file ${path.basename(rel)}`);
   }
 
   // Population estimates: re-check the current vintage, then probe the next.

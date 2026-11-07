@@ -190,6 +190,63 @@ function partners(m, s) {
     });
 }
 
+// ---------- sentiment ----------
+// Sentiment compares move *rates*: the share of one state's residents who moved
+// to the other, against the share moving the other way. Rates are per 100,000
+// residents of the origin state, using its July 1 population the year before
+// the survey (when the movers still lived there).
+const PER = 100000;
+const SENT_BREAKS = [1.15, 1.4, 2];
+const fmtPer = (v) => (v === null || !Number.isFinite(v) ? '—' : v < 10 ? v.toFixed(1) : fmtInt(Math.round(v)));
+const fmtRatio = (r) => (r === null || !Number.isFinite(r) ? '—' : `${r < 10 ? r.toFixed(2) : Math.round(r)}×`);
+
+/** Origin populations for a dataset (summed over its surveys for combined datasets). */
+function originPop(key = app.year) {
+  const n = app.states.length;
+  const out = new Array(n).fill(0);
+  for (const y of dsYears(key)) {
+    const p = app.population[y - 1];
+    for (let i = 0; i < n; i++) out[i] += p[i];
+  }
+  return out;
+}
+
+/**
+ * Sentiment between origin a and destination b: rab is a's residents moving to
+ * b per 100k, rba the reverse. ratio = rab / rba (> 1: a's residents favor b
+ * more than b's favor a). Significant when the rate difference exceeds its
+ * 90% margin of error.
+ */
+function pairSentiment(m, pop, a, b) {
+  const fab = flow(m, a, b);
+  const fba = flow(m, b, a);
+  const rab = (fab / pop[a]) * PER;
+  const rba = (fba / pop[b]) * PER;
+  const mab = (flowMoe(m, a, b) / pop[a]) * PER;
+  const mba = (flowMoe(m, b, a) / pop[b]) * PER;
+  const diff = rab - rba;
+  const moe = Math.hypot(mab, mba);
+  const ratio = rab > 0 && rba > 0 ? rab / rba : null;
+  return { a, b, fab, fba, rab, rba, mab, mba, diff, moe, ratio, sig: ratio !== null && isSig(diff, moe) };
+}
+
+/** Color scale on a ratio: green above 1, red below, with fixed ratio steps. */
+function ratioScale(gainVar) {
+  const gains = [1, 2, 3, 4].map((k) => css(`${gainVar}-${k}`));
+  const losses = ['--loss-1', '--loss-2', '--loss-3', '--loss-4'].map(css);
+  const bin = (r) => {
+    let k = 0;
+    while (k < SENT_BREAKS.length && r > SENT_BREAKS[k]) k++;
+    return k;
+  };
+  const color = (r) => {
+    if (r === null || r === undefined) return css('--no-data');
+    if (r === 1) return css('--div-mid');
+    return r > 1 ? gains[bin(r)] : losses[bin(1 / r)];
+  };
+  return { color, breaks: SENT_BREAKS, gains, losses, ratio: true };
+}
+
 // ---------- map ----------
 const svg = d3.select('#map');
 const path = d3.geoPath();
@@ -317,10 +374,46 @@ function arrowGeometry(a, b, width, bend = 0.2, r0 = 5, r1 = 7) {
   };
 }
 
+function sentimentArrows(m) {
+  const n = app.states.length;
+  const pop = originPop();
+  const arrows = [];
+  const byStrength = (a, b) => b.sig - a.sig || b.value - a.value;
+  if (app.sel < 0) {
+    // Pairs with enough movers both ways that the ratio means something.
+    const minFlow = 1000 * dsYears().length;
+    const pairs = [];
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const ps = pairSentiment(m, pop, i, j);
+        if (ps.ratio === null || Math.min(ps.fab, ps.fba) < minFlow) continue;
+        const [o, d] = ps.ratio >= 1 ? [i, j] : [j, i];
+        pairs.push({ o, d, value: Math.max(ps.ratio, 1 / ps.ratio), sig: ps.sig, color: '--arrow-neutral', kind: 'sent', ps });
+      }
+    }
+    return pairs.sort(byStrength).slice(0, app.topN);
+  }
+  const s = app.sel;
+  for (let p = 0; p < n; p++) {
+    if (p === s) continue;
+    const ps = pairSentiment(m, pop, p, s); // ratio > 1: p's residents favor s
+    if (ps.ratio === null) continue;
+    arrows.push(ps.ratio >= 1
+      ? { o: p, d: s, value: ps.ratio, sig: ps.sig, color: '--arrow-in', kind: 'sent', ps }
+      : { o: s, d: p, value: 1 / ps.ratio, sig: ps.sig, color: '--arrow-out', kind: 'sent', ps });
+  }
+  return arrows.sort(byStrength).slice(0, app.topN);
+}
+
 function buildArrows(m, tot) {
   const st = app.states;
   const n = st.length;
   const arrows = [];
+  if (app.mode === 'sent') {
+    const sa = sentimentArrows(m);
+    for (const a of sa) if (!a.sig) a.color = '--arrow-ns';
+    return sa;
+  }
   if (app.sel < 0) {
     if (app.mode === 'net') {
       const pairs = [];
@@ -369,11 +462,40 @@ function buildArrows(m, tot) {
   return arrows.filter((a) => st[a.o] && st[a.d]);
 }
 
+function sentimentTip(event, ps, node) {
+  const st = app.states;
+  // Orient so the first state is the one whose residents favor the second.
+  const fwd = ps.ratio >= 1;
+  const A = st[fwd ? ps.a : ps.b];
+  const B = st[fwd ? ps.b : ps.a];
+  const [rab, rba, mab, mba, fab, fba] = fwd
+    ? [ps.rab, ps.rba, ps.mab, ps.mba, ps.fab, ps.fba]
+    : [ps.rba, ps.rab, ps.mba, ps.mab, ps.fba, ps.fab];
+  const k = Math.max(ps.ratio, 1 / ps.ratio);
+  const rows = [
+    [`${A.abbr} → ${B.abbr}: ${fmtInt(fab)} people`, `${fmtPer(rab)} ± ${fmtPer(mab)} per 100k ${A.abbr}`],
+    [`${B.abbr} → ${A.abbr}: ${fmtInt(fba)} people`, `${fmtPer(rba)} ± ${fmtPer(mba)} per 100k ${B.abbr}`],
+    ['Sentiment', fmtRatio(k)],
+  ];
+  const notes = [
+    `People in ${A.name} were ${fmtRatio(k)} as likely to move to ${B.name} as people in ${B.name} were to move to ${A.name}.`,
+    ps.sig
+      ? null
+      : { warn: true, text: 'Not statistically significant: the difference between the two rates is within its 90% margin of error.' },
+  ];
+  if (node) tipAtElement(node, `${A.name} → ${B.name}`, rows, notes);
+  else showTip(event, `${A.name} → ${B.name}`, rows, notes);
+}
+
 function arrowTip(event, a, m) {
   const st = app.states;
   const O = st[a.o];
   const D = st[a.d];
   const sel = app.sel;
+  if (a.kind === 'sent') {
+    sentimentTip(event, a.ps);
+    return;
+  }
   if (a.kind === 'in' || a.kind === 'out' || a.kind === 'netsel') {
     const S = st[sel];
     const P = a.o === sel ? D : O;
@@ -453,15 +575,30 @@ function renderMap(m) {
       moes[p.i] = p.netMoe;
     }
   }
-  const scale = divergingScale(values.filter((v, i) => i !== sel && v !== null), sel < 0 ? '--gain' : '--in');
+  let scale;
+  let fill;
+  if (app.mode === 'sent') {
+    // Shade by sentiment: overall (all states) or toward the selected state.
+    // Shade partners by sentiment toward the selected state. With all states
+    // shown there is no per-state shading: a state's rate against the whole
+    // rest of the country mostly reflects its size.
+    const pop = originPop();
+    scale = ratioScale('--in');
+    if (sel < 0) fill = () => css('--div-mid');
+    else {
+      const sents = st.map((x, i) => (i === sel ? null : pairSentiment(m, pop, i, sel)));
+      fill = (i) => (sents[i] && !sents[i].sig ? css('--div-mid') : scale.color(sents[i]?.ratio ?? null));
+    }
+  } else {
+    scale = divergingScale(values.filter((v, i) => i !== sel && v !== null), sel < 0 ? '--gain' : '--in');
+    fill = (i) => (values[i] !== null && !isSig(values[i], moes[i]) ? css('--div-mid') : scale.color(values[i]));
+  }
 
   gStates.selectAll('path.state')
     .classed('selected', (s) => app.byFips.get(s.fips).i === sel)
     .attr('fill', (s) => {
       const i = app.byFips.get(s.fips).i;
-      if (i === sel) return css('--selected-fill');
-      if (values[i] !== null && !isSig(values[i], moes[i])) return css('--div-mid');
-      return scale.color(values[i]);
+      return i === sel ? css('--selected-fill') : fill(i);
     });
   gAbbr.selectAll('text').classed('on-selected', (s) => app.byFips.get(s.fips).i === sel);
 
@@ -469,8 +606,12 @@ function renderMap(m) {
   app.current.anyNs = arrows.some((a) => !a.sig);
   const maxV = d3.max(arrows, (a) => a.value) || 1;
   const MAX_W = 10;
+  const sentMode = app.mode === 'sent';
   for (const a of arrows) {
-    a.w = Math.max(1, (MAX_W * a.value) / maxV);
+    // Sentiment ratios are scaled on a log scale (2× is as strong as 1/2×).
+    a.w = sentMode
+      ? Math.max(1.2, (MAX_W * Math.log(a.value)) / Math.log(Math.max(maxV, 1.5)))
+      : Math.max(1, (MAX_W * a.value) / maxV);
     a.geom = arrowGeometry(
       anchors.get(st[a.o].fips),
       anchors.get(st[a.d].fips),
@@ -479,7 +620,7 @@ function renderMap(m) {
       a.o === sel ? 10 : 5,
       a.d === sel ? 12 : 7,
     );
-    a.text = fmtCompact(a.value);
+    a.text = sentMode ? fmtRatio(a.value).replace(/(\.\d)\d×$/, '$1×') : fmtCompact(a.value);
   }
   // Draw thin arrows on top so they aren't hidden under thick ones.
   arrows.sort((a, b) => b.value - a.value);
@@ -537,19 +678,25 @@ function renderMap(m) {
 }
 
 function renderLegend(scale) {
-  const fmtB = (v) => fmtCompact(v);
+  const fmtB = (v) => (scale.ratio ? `${v}×` : fmtCompact(v));
   const sel = app.sel;
   const sw = (c) => el('span', { class: 'swatch', style: `background:${c}` });
   const lossSide = [...scale.losses].reverse();
-  const title = sel < 0 ? 'Net interstate migration' : `Net for ${app.states[sel].abbr}`;
+  const sent = app.mode === 'sent';
+  const title = sent
+    ? (sel < 0 ? 'Sentiment' : `Sentiment toward ${app.states[sel].abbr}`)
+    : (sel < 0 ? 'Net interstate migration' : `Net for ${app.states[sel].abbr}`);
   const b = scale.breaks;
-  document.getElementById('legend').replaceChildren(
+  if (sent && sel < 0) {
+    document.getElementById('legend').replaceChildren(
+      el('span', {}, 'States aren\'t shaded in this view. Select a state to shade its partners by sentiment.'));
+  } else document.getElementById('legend').replaceChildren(
     el('div', { class: 'scale' },
       el('span', {}, title),
-      el('span', {}, `Loss`),
+      el('span', {}, sent ? 'Less favored' : 'Loss'),
       el('span', { class: 'swatches', title: `Breaks at ${b.map(fmtB).join(', ')}` },
         lossSide.map(sw), sw(css('--div-mid')), scale.gains.map(sw)),
-      el('span', {}, 'Gain'),
+      el('span', {}, sent ? 'More favored' : 'Gain'),
     ),
     el('span', {}, `Steps: ${b.map(fmtB).join(' · ')}`),
     el('span', { class: 'key', title: 'The 90% margin of error is larger than the net, so it could be a gain or a loss' },
@@ -563,7 +710,14 @@ function renderLegend(scale) {
     return s.node();
   };
   let keys;
-  if (sel < 0) {
+  if (sent) {
+    keys = sel < 0
+      ? [el('span', { class: 'key' }, line('--arrow-neutral'), 'Points toward the favored state')]
+      : [
+        el('span', { class: 'key' }, line('--arrow-in'), `Favors ${app.states[sel].abbr}`),
+        el('span', { class: 'key' }, line('--arrow-out'), 'Favors the partner'),
+      ];
+  } else if (sel < 0) {
     keys = [el('span', { class: 'key' }, line('--arrow-neutral'),
       app.mode === 'net' ? 'Largest net flows between pairs of states' : 'Largest one-way flows')];
   } else {
@@ -575,13 +729,14 @@ function renderLegend(scale) {
   }
   if (app.current?.anyNs) {
     const s = d3.create('svg').attr('width', 30).attr('height', 10);
-    const netMode = app.mode === 'net';
+    const netMode = app.mode !== 'both';
     s.append('path').attr('d', 'M2,5H26').attr('stroke', css(netMode ? '--arrow-ns' : '--text-secondary'))
       .attr('stroke-width', 2.5).attr('stroke-dasharray', '4 3');
     keys.push(el('span', { class: 'key', title: 'The 90% margin of error is larger than the estimate; hover for the value' }, s.node(),
       netMode ? 'Gray dashed: direction not significant' : 'Dashed: not statistically significant'));
   }
-  document.getElementById('arrow-legend').replaceChildren(...keys, el('span', {}, 'Width proportional to movers · hover for values'));
+  document.getElementById('arrow-legend').replaceChildren(...keys,
+    el('span', {}, sent ? 'Width grows with the ratio · hover for rates' : 'Width proportional to movers · hover for values'));
 }
 
 function stat(label, value, moe, ns = false) {
@@ -590,7 +745,7 @@ function stat(label, value, moe, ns = false) {
     el('span', { class: 'value', title: ns ? 'Not statistically significant: the margin of error is larger than the estimate' : null }, value),
     moe !== undefined
       ? el('a', { class: 'moe', href: '#margins', title: '90% margin of error: what does this mean?' }, `± ${fmtInt(moe)}${ns ? ' · not significant' : ''}`)
-      : null);
+      : ns ? el('a', { class: 'moe', href: '#margins' }, 'not significant') : null);
 }
 
 function renderHeader(tot) {
@@ -599,7 +754,32 @@ function renderHeader(tot) {
   const title = document.getElementById('map-title');
   const sub = document.getElementById('map-sub');
   const stats = document.getElementById('stats');
-  if (sel < 0) {
+  const sent = app.mode === 'sent';
+  const whatIs = el('a', { href: '#sentiment' }, 'What is sentiment?');
+  if (sent && sel < 0) {
+    title.textContent = `Migration sentiment between states, ${y}`;
+    sub.replaceChildren(
+      `Arrows: the ${app.topN} most lopsided pairs of states (at least ${fmtInt(1000 * dsYears().length)} movers each way), `,
+      'comparing each state\'s move rate per resident to the other. They point toward the favored state, labeled with the ratio. ',
+      whatIs,
+    );
+    const movers = d3.sum(tot, (t) => t.inflow);
+    stats.replaceChildren(stat(isCombined() ? `Interstate moves, ${dsYears().length} surveys` : 'Interstate movers', fmtInt(movers)));
+  } else if (sent) {
+    const S = app.states[sel];
+    const t = tot[sel];
+    title.textContent = `${S.name}: migration sentiment, ${y}`;
+    sub.replaceChildren(
+      `Partners in green: their residents moved to ${S.name} at a higher rate per resident than ${S.name} residents moved to them; red: the reverse. `,
+      `Arrows point toward the favored state, labeled with the ratio of the two move rates. `,
+      whatIs,
+    );
+    stats.replaceChildren(
+      stat('Moved in', fmtInt(t.inflow), t.inMoe),
+      stat('Moved out', fmtInt(t.outflow), t.outMoe),
+      stat('Net', fmtSigned(t.net), t.netMoe, !isSig(t.net, t.netMoe)),
+    );
+  } else if (sel < 0) {
     title.textContent = `Migration between states, ${y}`;
     sub.textContent = app.mode === 'net'
       ? `States shaded by net interstate migration. Arrows: the ${app.topN} largest net flows between two states.`
@@ -626,6 +806,10 @@ function stateTip(event, i, node) {
   const { m, tot } = app.current;
   const S = app.states[i];
   const sel = app.sel;
+  if (app.mode === 'sent' && sel >= 0 && sel !== i) {
+    sentimentTip(event, pairSentiment(m, originPop(), i, sel), node);
+    return;
+  }
   let rows;
   let title = S.name;
   let note;
@@ -862,6 +1046,10 @@ function renderFlowsTable(m) {
     onpointerleave: () => highlightArrows(-1),
   });
   table.classList.toggle('focus', sel >= 0);
+  if (app.mode === 'sent') {
+    renderSentimentTable(m, table, title, sub, rowAttrs);
+    return;
+  }
   if (sel < 0) {
     const tot = totals(m);
     const rows = tot.map((t) => ({ ...t, name: st[t.i].name }));
@@ -902,6 +1090,70 @@ function renderFlowsTable(m) {
       net: fmtSigned(t.net), netMoe: fmtInt(t.netMoe), __row: t,
     }, rowAttrs);
   }
+}
+
+const sentCls = (x) => (x.ratio === null ? 'muted' : `${x.ratio > 1 ? 'pos' : x.ratio < 1 ? 'neg' : 'muted'}${x.sig ? '' : ' ns'}`);
+const logRatio = (x) => (x.ratio ? Math.log(x.ratio) : 0);
+
+function renderSentimentTable(m, table, title, sub, rowAttrs) {
+  const st = app.states;
+  const sel = app.sel;
+  const pop = originPop();
+  const note = 'Rates are people who moved per 100,000 residents of the state they left. Sentiment is the ratio of the two rates; gray italic means the difference isn\'t statistically significant.';
+  const link = el('a', { href: '#sentiment' }, 'What is sentiment?');
+  if (sel < 0) {
+    // Every pair with enough movers both ways, oriented toward the favored state.
+    const minFlow = 1000 * dsYears().length;
+    const rows = [];
+    for (let a = 0; a < st.length; a++) {
+      for (let b = a + 1; b < st.length; b++) {
+        const ps = pairSentiment(m, pop, a, b);
+        if (ps.ratio === null || Math.min(ps.fab, ps.fba) < minFlow) continue;
+        const fwd = ps.ratio >= 1; // a's residents favor b
+        const [o, d] = fwd ? [a, b] : [b, a];
+        rows.push({
+          i: o,
+          name: `${st[o].name} → ${st[d].name}`,
+          f: fwd ? ps.fab : ps.fba,
+          r: fwd ? ps.rab : ps.rba,
+          rf: fwd ? ps.fba : ps.fab,
+          rr: fwd ? ps.rba : ps.rab,
+          ratio: Math.max(ps.ratio, 1 / ps.ratio),
+          sig: ps.sig,
+        });
+      }
+    }
+    const max = d3.max(rows, (r) => Math.abs(logRatio(r)));
+    title.textContent = `Most lopsided pairs of states, ${dsLabel()}`;
+    sub.replaceChildren(`Each pair with at least ${fmtInt(minFlow)} movers each way, listed from the state whose residents were more likely to move to the other. ${note} `, link);
+    sortableTable(table, 'sentAll', [
+      { key: 'name', label: 'From → favored state' },
+      { key: 'f', label: 'Moved', render: (r) => fmtInt(r.f) },
+      { key: 'r', label: 'Per 100k', render: (r) => fmtPer(r.r), title: 'Per 100,000 residents of the first state' },
+      { key: 'rf', label: 'Moved back', render: (r) => fmtInt(r.rf) },
+      { key: 'rr', label: 'Per 100k', render: (r) => fmtPer(r.rr), title: 'Per 100,000 residents of the second state' },
+      { key: 'ratio', label: 'Sentiment', render: (r) => fmtRatio(r.ratio), cls: sentCls, defaultSort: true },
+      { key: 'bar', label: '', sortable: false, barcell: true, render: (r) => minibar(logRatio(r), max) },
+    ], rows, null, rowAttrs);
+    return;
+  }
+  const S = st[sel];
+  const rows = st.map((x, i) => i).filter((i) => i !== sel).map((i) => {
+    const ps = pairSentiment(m, pop, i, sel);
+    return { i, name: st[i].name, inflow: ps.fab, outflow: ps.fba, rin: ps.rab, rout: ps.rba, ratio: ps.ratio, sig: ps.sig };
+  });
+  const max = d3.max(rows, (r) => Math.abs(logRatio(r)));
+  title.textContent = `Sentiment between ${S.name} and each other state, ${dsLabel()}`;
+  sub.replaceChildren(`Rate into ${S.abbr}: the partner's residents who moved to ${S.name}, per 100,000 of them. Rate out of ${S.abbr}: ${S.name} residents who moved to the partner, per 100,000. Sentiment above 1× means the partner's residents favor ${S.name}. ${note} `, link);
+  sortableTable(table, 'sentSel', [
+    { key: 'name', label: 'Partner state' },
+    { key: 'inflow', label: `Into ${S.abbr}`, render: (r) => fmtInt(r.inflow) },
+    { key: 'rin', label: 'Rate in', render: (r) => fmtPer(r.rin), title: `Per 100,000 residents of the partner state` },
+    { key: 'outflow', label: `Out of ${S.abbr}`, render: (r) => fmtInt(r.outflow) },
+    { key: 'rout', label: 'Rate out', render: (r) => fmtPer(r.rout), title: `Per 100,000 residents of ${S.name}` },
+    { key: 'ratio', label: `Sentiment toward ${S.abbr}`, render: (r) => fmtRatio(r.ratio), cls: sentCls, defaultSort: true },
+    { key: 'bar', label: '', sortable: false, barcell: true, render: (r) => minibar(logRatio(r), max) },
+  ], rows, null, rowAttrs);
 }
 
 function highlightArrows(i) {
@@ -1110,7 +1362,7 @@ function readHash() {
   if (key !== null) app.year = key;
   const s = app.byAbbr.get((p.get('state') || '').toUpperCase());
   app.sel = s ? s.i : -1;
-  app.mode = p.get('mode') === 'both' ? 'both' : 'net';
+  app.mode = ['both', 'sent'].includes(p.get('mode')) ? p.get('mode') : 'net';
   const t = Number(p.get('top'));
   if (t >= 3 && t <= 30) app.topN = t;
   const pe = Number(p.get('pe'));
@@ -1224,7 +1476,8 @@ function initControls() {
 }
 
 async function main() {
-  const [index, popest] = await Promise.all([getJson('index.json'), getJson('popest.json')]);
+  const [index, popest, population] = await Promise.all([getJson('index.json'), getJson('popest.json'), getJson('population.json')]);
+  app.population = population;
   app.index = index;
   app.popest = popest;
   app.states = index.states.map((s, i) => ({ ...s, i }));

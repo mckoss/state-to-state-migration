@@ -17,6 +17,10 @@ Deployed to GitHub Pages (served at [mckoss.com/state-to-state-migration](https:
 - **One state:** pick a state (dropdown or click the map) to see its partners. *Net* shows one
   arrow per partner in the direction of the net flow; *In & out* shows both opposing flows.
 - Dataset picker for every ACS 1-year release since 2005 (there is no 2020 table).
+- A **Sentiment** mode that compares move rates per resident: the share of one state's
+  residents who moved to another, against the share who moved back (for example, people in
+  California were 1.33× as likely to move to Texas as Texans were to move to California).
+  Populations come from the Census Bureau's population estimates (`data/raw/population/`).
 - Combined datasets that add up the most recent 5 and 10 yearly tables, for the longer-run
   picture (they count moves, so someone who moved twice counts twice).
 - Year-by-year chart for the selected state, comparing ACS net migration with the
