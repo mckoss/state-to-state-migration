@@ -224,11 +224,25 @@ function pairSentiment(m, pop, a, b) {
   const rba = (fba / pop[b]) * PER;
   const mab = (flowMoe(m, a, b) / pop[a]) * PER;
   const mba = (flowMoe(m, b, a) / pop[b]) * PER;
-  const diff = rab - rba;
-  const moe = Math.hypot(mab, mba);
   const ratio = rab > 0 && rba > 0 ? rab / rba : null;
-  return { a, b, fab, fba, rab, rba, mab, mba, diff, moe, ratio, sig: ratio !== null && isSig(diff, moe) };
+  if (ratio === null) return { a, b, fab, fba, rab, rba, mab, mba, ratio, k: null, lo: null, hi: null, sig: false };
+  // The ratio's 90% margin, with the Census Bureau's formula for a ratio of
+  // two estimates, computed for the ratio >= 1 (larger rate over smaller):
+  // MOE(X/Y) = sqrt(MOE_X^2 + (X/Y)^2 * MOE_Y^2) / Y.
+  const fwd = ratio >= 1;
+  const [hiR, loR, hiM, loM] = fwd ? [rab, rba, mab, mba] : [rba, rab, mba, mab];
+  const k = hiR / loR;
+  const kMoe = Math.sqrt(hiM ** 2 + k ** 2 * loM ** 2) / loR;
+  const kLo = Math.max(0, k - kMoe);
+  const kHi = k + kMoe;
+  // Range of `ratio` itself (inverted when the reverse direction is favored).
+  const lo = fwd ? kLo : 1 / kHi;
+  const hi = fwd ? kHi : kLo > 0 ? 1 / kLo : Infinity;
+  // Significant when the ratio's 90% range excludes 1x.
+  return { a, b, fab, fba, rab, rba, mab, mba, ratio, k, kLo, kHi, lo, hi, sig: kLo > 1 };
 }
+
+const fmtRange = (lo, hi) => `${fmtRatio(lo).replace('×', '')}–${Number.isFinite(hi) ? fmtRatio(hi) : '∞'}`;
 
 /** Color scale on a ratio: green above 1, red below, with fixed ratio steps. */
 function ratioScale(gainVar) {
@@ -471,17 +485,22 @@ function sentimentTip(event, ps, node) {
   const [rab, rba, mab, mba, fab, fba] = fwd
     ? [ps.rab, ps.rba, ps.mab, ps.mba, ps.fab, ps.fba]
     : [ps.rba, ps.rab, ps.mba, ps.mab, ps.fba, ps.fab];
-  const k = Math.max(ps.ratio, 1 / ps.ratio);
+  const { k, kLo, kHi } = ps;
   const rows = [
-    [`${A.abbr} → ${B.abbr}: ${fmtInt(fab)} people`, `${fmtPer(rab)} ± ${fmtPer(mab)} per 100k ${A.abbr}`],
-    [`${B.abbr} → ${A.abbr}: ${fmtInt(fba)} people`, `${fmtPer(rba)} ± ${fmtPer(mba)} per 100k ${B.abbr}`],
+    [`${A.abbr} → ${B.abbr}`, `${fmtPer(rab)} ± ${fmtPer(mab)} per 100k`],
+    [`${B.abbr} → ${A.abbr}`, `${fmtPer(rba)} ± ${fmtPer(mba)} per 100k`],
     ['Sentiment', fmtRatio(k)],
+    ['90% range', `${fmtRange(kLo, kHi)}`],
   ];
   const notes = [
-    `People in ${A.name} were ${fmtRatio(k)} as likely to move to ${B.name} as people in ${B.name} were to move to ${A.name}.`,
+    `People in ${A.name} were ${fmtRatio(k)} as likely to move to ${B.name} as people in ${B.name} were to move to ${A.name} `
+      + `(90% range ${fmtRange(kLo, kHi)}).`,
+    `${fmtPer(rab)} of every 100,000 ${A.name} residents moved to ${B.name} (${fmtInt(fab)} people); `
+      + `${fmtPer(rba)} of every 100,000 ${B.name} residents moved to ${A.name} (${fmtInt(fba)} people). `
+      + `Sentiment is ${fmtPer(rab)} ÷ ${fmtPer(rba)}; the ± figures are each rate's margin of error.`,
     ps.sig
       ? null
-      : { warn: true, text: 'Not statistically significant: the difference between the two rates is within its 90% margin of error.' },
+      : { warn: true, text: `Not statistically significant: the ratio's 90% range (${fmtRange(kLo, kHi)}) includes 1×.` },
   ];
   if (node) tipAtElement(node, `${A.name} → ${B.name}`, rows, notes);
   else showTip(event, `${A.name} → ${B.name}`, rows, notes);
@@ -1099,7 +1118,7 @@ function renderSentimentTable(m, table, title, sub, rowAttrs) {
   const st = app.states;
   const sel = app.sel;
   const pop = originPop();
-  const note = 'Rates are people who moved per 100,000 residents of the state they left. Sentiment is the ratio of the two rates; gray italic means the difference isn\'t statistically significant.';
+  const note = 'Rates are people who moved per 100,000 residents of the state they left. Sentiment is the ratio of the two rates; gray italic means its 90% range includes 1×.';
   const link = el('a', { href: '#sentiment' }, 'What is sentiment?');
   if (sel < 0) {
     // Every pair with enough movers both ways, oriented toward the favored state.
@@ -1120,6 +1139,8 @@ function renderSentimentTable(m, table, title, sub, rowAttrs) {
           rr: fwd ? ps.rba : ps.rab,
           ratio: Math.max(ps.ratio, 1 / ps.ratio),
           sig: ps.sig,
+          lo: ps.kLo,
+          hi: ps.kHi,
         });
       }
     }
@@ -1133,6 +1154,7 @@ function renderSentimentTable(m, table, title, sub, rowAttrs) {
       { key: 'rf', label: 'Moved back', render: (r) => fmtInt(r.rf) },
       { key: 'rr', label: 'Per 100k', render: (r) => fmtPer(r.rr), title: 'Per 100,000 residents of the second state' },
       { key: 'ratio', label: 'Sentiment', render: (r) => fmtRatio(r.ratio), cls: sentCls, defaultSort: true },
+      { key: 'lo', label: '90% range', render: (r) => fmtRange(r.lo, r.hi), cls: () => 'muted', title: '90% range of the ratio' },
       { key: 'bar', label: '', sortable: false, barcell: true, render: (r) => minibar(logRatio(r), max) },
     ], rows, null, rowAttrs);
     return;
@@ -1140,7 +1162,7 @@ function renderSentimentTable(m, table, title, sub, rowAttrs) {
   const S = st[sel];
   const rows = st.map((x, i) => i).filter((i) => i !== sel).map((i) => {
     const ps = pairSentiment(m, pop, i, sel);
-    return { i, name: st[i].name, inflow: ps.fab, outflow: ps.fba, rin: ps.rab, rout: ps.rba, ratio: ps.ratio, sig: ps.sig };
+    return { i, name: st[i].name, inflow: ps.fab, outflow: ps.fba, rin: ps.rab, rout: ps.rba, ratio: ps.ratio, sig: ps.sig, lo: ps.lo, hi: ps.hi };
   });
   const max = d3.max(rows, (r) => Math.abs(logRatio(r)));
   title.textContent = `Sentiment between ${S.name} and each other state, ${dsLabel()}`;
@@ -1152,6 +1174,7 @@ function renderSentimentTable(m, table, title, sub, rowAttrs) {
     { key: 'outflow', label: `Out of ${S.abbr}`, render: (r) => fmtInt(r.outflow) },
     { key: 'rout', label: 'Rate out', render: (r) => fmtPer(r.rout), title: `Per 100,000 residents of ${S.name}` },
     { key: 'ratio', label: `Sentiment toward ${S.abbr}`, render: (r) => fmtRatio(r.ratio), cls: sentCls, defaultSort: true },
+    { key: 'lo', label: '90% range', render: (r) => (r.ratio === null ? '—' : fmtRange(r.lo, r.hi)), cls: () => 'muted', title: '90% range of the ratio' },
     { key: 'bar', label: '', sortable: false, barcell: true, render: (r) => minibar(logRatio(r), max) },
   ], rows, null, rowAttrs);
 }
