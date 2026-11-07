@@ -547,6 +547,27 @@ input[type='range'] {
   border-bottom: none;
 }
 
+.data-table td.ns,
+.data-table.focus td.ns {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.stat.ns .value {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.tooltip .tt-warn {
+  color: var(--text-primary);
+  border-left: 2px solid var(--axis);
+  padding-left: 6px;
+}
+
+#map .arrow.ns .shaft {
+  opacity: 0.75;
+}
+
 .data-table .muted {
   color: var(--text-muted);
 }

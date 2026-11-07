@@ -234,3 +234,29 @@ test('no horizontal scroll at phone width', async ({ browser }) => {
   expect(scrollW).toBeLessThanOrEqual(innerW);
   await page.close();
 });
+
+test('estimates within their margin of error are flagged as not significant', async ({ page }) => {
+  await open(page, '#year=2024&state=WA&top=20');
+  // WA's 2024 net (+17,404 ± 17,557) is not statistically different from zero.
+  await expect(page.locator('#stats .stat.ns')).toContainText('not significant');
+
+  // Massachusetts: +711 ± 1,755 for WA — the 90% range spans zero.
+  await page.locator('#map path.state[aria-label="Massachusetts"]').hover({ force: true });
+  await expect(page.locator('#tooltip')).toContainText('+711 ± 1,755');
+  await expect(page.locator('#tooltip .tt-warn')).toContainText('−1,044 to +2,466');
+  await page.mouse.move(2, 2);
+  const ma = page.locator('#flows-table tbody tr', { hasText: 'Massachusetts' });
+  await expect(ma.locator('td.ns')).toHaveText('+711');
+  // California: +17k net to WA is significant, so not grayed.
+  await expect(page.locator('#flows-table tbody tr', { hasText: 'California' }).locator('td.ns')).toHaveCount(0);
+
+  // Arrows are dashed exactly when the value is within its margin of error.
+  const a = await page.evaluate(() => [...document.querySelectorAll('#map g.arrow')].map((g) => ({
+    value: g.__data__.value,
+    moe: g.__data__.moe,
+    dashed: g.querySelector('.shaft').hasAttribute('stroke-dasharray'),
+  })));
+  expect(a.some((x) => x.dashed)).toBe(true);
+  for (const x of a) expect(x.dashed).toBe(x.value <= x.moe);
+  await expect(page.locator('#arrow-legend')).toContainText('not statistically significant');
+});

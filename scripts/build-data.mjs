@@ -224,6 +224,8 @@ function buildPopest() {
 }
 
 function main() {
+  // Start clean so a removed source file can't leave a stale JSON behind.
+  fs.rmSync(OUT, { recursive: true, force: true });
   fs.mkdirSync(OUT, { recursive: true });
   const acs = buildAcs();
   const popest = buildPopest();
