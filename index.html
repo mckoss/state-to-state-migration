@@ -57,7 +57,7 @@
           <div id="legend" class="legend"></div>
           <div id="arrow-legend" class="legend arrow-legend"></div>
         </div>
-        <p class="hint">Click a state to focus on it; click it again (or press Esc) to return to all states. Puerto Rico is shown as the square near Florida.</p>
+        <p class="hint">Click a state to focus on it; click it again (or press Esc) to return to all states. Puerto Rico is shown as the square near Florida. <a href="#margins">What do the &plusmn; numbers mean?</a></p>
       </section>
 
       <section class="card">
@@ -118,6 +118,57 @@
         </div>
         <p class="hint">Hover a state for its components of change; click it to show its state-to-state flows on the map above.</p>
         <div class="table-wrap"><table id="popest-table" class="data-table"></table></div>
+      </section>
+
+      <section class="card notes" id="margins" aria-labelledby="margins-title">
+        <h2 id="margins-title">About the &plusmn; numbers</h2>
+        <p>
+          The state-to-state flows come from the American Community Survey (ACS), which asks a sample of about
+          1 in 40 homes each year where everyone lived a year earlier. The Census Bureau scales the answers up to
+          the whole population, so every number is an <em>estimate</em>, and it publishes a
+          <strong>margin of error</strong> with each one. &ldquo;2,963 &plusmn; 1,488&rdquo; means the Bureau is 90%
+          confident the true number is between 1,475 and 4,451.
+        </p>
+        <h3>Why the margins can be so large</h3>
+        <ul>
+          <li>
+            <strong>Few people in the sample made that move.</strong> Only about 2% of people move to another state in
+            a year, and those moves are spread over 2,652 pairs of states. A flow of a few thousand people rests on
+            a few dozen survey answers, so it can't be pinned down closely. Big flows are much more precise:
+            California &rarr; Texas in 2024 was 77,161 &plusmn; 9,059 (&plusmn;12%), while Massachusetts &rarr;
+            Washington was 2,963 &plusmn; 1,488 (&plusmn;50%). In 2024, more than a quarter of the state-to-state
+            flows have a margin as large as the estimate itself.
+          </li>
+          <li>
+            <strong>Zero doesn't mean nobody.</strong> When no one in the sample made a move, the estimate is 0, but
+            the margin (for example, Wyoming &rarr; Vermont: 0 &plusmn; 170) says it could still be a few hundred people.
+          </li>
+          <li>
+            <strong>Net numbers are the least certain.</strong> A net is the difference between two flows that are
+            often similar in size. The flows mostly cancel, but their uncertainties don't: they combine. Washington's
+            exchange with Massachusetts in 2024 was 2,963 in and 2,252 out, a net of +711, but the margin on the net
+            is &plusmn;1,755 &mdash; bigger than the net itself. The true net could be a loss of 1,044 or a gain of
+            2,466, so the map shows it in gray.
+          </li>
+        </ul>
+        <h3>How to read them here</h3>
+        <ul>
+          <li>
+            When the margin is larger than the estimate, the number is <strong>not statistically significant</strong>:
+            the survey can't rule out zero. On the map those arrows are dashed and unlabeled, uncertain nets are gray,
+            and in the tables the values are gray italic. Hover for the full range.
+          </li>
+          <li>
+            Totals and longer periods are more precise. A state's total moves combine dozens of flows, and the
+            combined 5- and 10-survey datasets add up independent samples, so their margins are smaller relative to
+            the estimates.
+          </li>
+          <li>
+            The population estimates in the bottom section show no margins. They aren't a survey: the Census Bureau
+            builds them from tax returns, Medicare enrollment and other records, and doesn't publish margins of error
+            for them. They're not exact either.
+          </li>
+        </ul>
       </section>
 
       <footer class="sources">

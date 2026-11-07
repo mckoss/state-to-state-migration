@@ -348,3 +348,15 @@ test('combined datasets sum the last 5 and 10 surveys', async ({ page }) => {
   await page.locator('#history svg rect').nth(19).click(); // 2024
   await expect(page.locator('#map-title')).toHaveText('Texas: migration with other states, 2024');
 });
+
+test('the ± margins are explained, and the link keeps the current view', async ({ page }) => {
+  await open(page, '#year=2024&state=WA');
+  await expect(page.locator('#margins h2')).toHaveText('About the ± numbers');
+  await expect(page.locator('#margins')).toContainText('Why the margins can be so large');
+  await page.locator('#stats a.moe').first().click();
+  await expect(page.locator('#margins-title')).toBeInViewport();
+  // The hash still holds the view: Washington stays selected.
+  await expect.poll(() => hashParams(page)).toContain('state=WA');
+  await expect(page.locator('#map-title')).toContainText('Washington');
+  await expect(page.locator('#flows-sub a[href="#margins"]')).toHaveCount(1);
+});

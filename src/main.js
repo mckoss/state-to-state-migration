@@ -388,7 +388,7 @@ function arrowTip(event, a, m) {
       [`Net for ${S.abbr}`, `${fmtSigned(net)} ± ${fmtInt(p.netMoe)}`],
     ], [
       a.kind === 'netsel' ? rangeNote(net, p.netMoe) : rangeNote(a.value, a.moe, 'flow'),
-      `ACS ${isCombined() ? comboMeta(app.year).label : app.year}; ± is the 90% margin of error. Click to focus on ${P.name}.`,
+      `ACS ${isCombined() ? comboMeta(app.year).label : app.year}; ± is the 90% margin of error (see "About the ± numbers" below). Click to focus on ${P.name}.`,
     ]);
     return;
   }
@@ -588,7 +588,9 @@ function stat(label, value, moe, ns = false) {
   return el('div', { class: `stat${ns ? ' ns' : ''}` },
     el('span', { class: 'label' }, label),
     el('span', { class: 'value', title: ns ? 'Not statistically significant: the margin of error is larger than the estimate' : null }, value),
-    moe !== undefined ? el('span', { class: 'moe' }, `± ${fmtInt(moe)}${ns ? ' · not significant' : ''}`) : null);
+    moe !== undefined
+      ? el('a', { class: 'moe', href: '#margins', title: '90% margin of error: what does this mean?' }, `± ${fmtInt(moe)}${ns ? ' · not significant' : ''}`)
+      : null);
 }
 
 function renderHeader(tot) {
@@ -866,6 +868,7 @@ function renderFlowsTable(m) {
     const max = d3.max(rows, (r) => Math.abs(r.net));
     title.textContent = `All states, ${dsLabel()}`;
     sub.textContent = `People who moved in from, and out to, other states (including D.C. and Puerto Rico). ${NS_NOTE} Click a row to focus on a state.`;
+    sub.append(' ', el('a', { href: '#margins' }, 'Why can the ± margins be so large?'));
     sortableTable(table, 'flowsAll', [
       { key: 'name', label: 'State' },
       { key: 'inflow', label: 'Moved in', render: (r) => fmtInt(r.inflow) },
@@ -883,6 +886,7 @@ function renderFlowsTable(m) {
     const sup = (flag, v) => (flag ? 'N' : fmtInt(v));
     title.textContent = `${S.name} and each other state, ${dsLabel()}`;
     sub.textContent = `Moved in: lived in the partner state a year earlier and in ${S.name} now. N = suppressed by the Census Bureau. ${NS_NOTE} Click a row to switch to that state.`;
+    sub.append(' ', el('a', { href: '#margins' }, 'Why can the ± margins be so large?'));
     const t = totals(m)[sel];
     sortableTable(table, 'flowsSel', [
       { key: 'name', label: 'Partner state' },
@@ -1199,8 +1203,20 @@ function initControls() {
     if (e.key === 'Escape' && app.sel >= 0 && !(e.target instanceof HTMLSelectElement)) setState(-1);
   });
   window.addEventListener('hashchange', () => {
+    // Only app-state hashes (key=value pairs) change the view.
+    if (!location.hash.includes('=')) return;
     readHash();
     render();
+  });
+  // The URL hash holds the view, so in-page links scroll instead of replacing it.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest?.('a[href^="#"]');
+    if (!a || a.getAttribute('href').includes('=')) return;
+    const target = document.getElementById(a.getAttribute('href').slice(1));
+    if (!target) return;
+    e.preventDefault();
+    hideTip();
+    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   window.addEventListener('scroll', hideTip, { passive: true });
   // Re-render on theme change so token colors refresh.
