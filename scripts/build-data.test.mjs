@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import XLSX from 'xlsx';
-import { STATES, latestPopestFile, parseGrid, publishedTotals, stateIndex } from './build-data.mjs';
+import { STATES, combineYears, latestPopestFile, parseGrid, publishedTotals, stateIndex } from './build-data.mjs';
 import { acsLinks } from './fetch-raw.mjs';
 
 const RAW = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'raw', 'acs');
@@ -79,4 +79,19 @@ test('published total-mover margins of error', () => {
   assert.equal(t24.inMoe[ix('AL')], 9899);
   assert.equal(t24.outMoe[ix('AL')], 8922);
   assert.equal(t24.inMoe.filter((v) => v === null).length, 0);
+});
+
+test('combineYears sums flows and combines margins in quadrature', () => {
+  const n = STATES.length;
+  const grid = (v) => Array.from({ length: n }, (_, d) => Array.from({ length: n }, (_, o) => (d === o ? null : v)));
+  const a = { est: grid(100), moe: grid(30), inMoe: new Array(n).fill(50), outMoe: null };
+  const b = { est: grid(200), moe: grid(40), inMoe: null, outMoe: null };
+  b.est[1][0] = null; // suppressed in one year only
+  const c = combineYears([a, b]);
+  assert.equal(c.est[0][1], 300);
+  assert.equal(c.est[1][0], 100);
+  assert.equal(c.moe[0][1], 50); // sqrt(30^2 + 40^2)
+  assert.equal(c.est[0][0], null);
+  // in-mover MOE: year a's published 50, year b's approximation sqrt(51 * 40^2).
+  assert.equal(c.inMoe[0], Math.round(Math.sqrt(50 ** 2 + 51 * 40 ** 2)));
 });
