@@ -21,6 +21,8 @@ Deployed to GitHub Pages (served at [mckoss.com/state-to-state-migration](https:
   population estimates' net domestic migration.
 - Sortable tables with margins of error, and a summary table of the latest population
   estimates (net domestic, net international and total net migration, with rates).
+- A second map of the latest population estimates, colored green (gain) or red (loss) by
+  total, domestic or international net migration, in people or per 1,000 residents.
 - Shareable URLs (`#year=2024&state=TX&mode=both`), light and dark themes, keyboard access.
 - The version from `package.json` is shown in the header.
 
