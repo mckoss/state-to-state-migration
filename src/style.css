@@ -187,6 +187,11 @@ h2 {
     top: 0;
     z-index: 5;
   }
+
+  /* Keep jump targets clear of the sticky filter bar. */
+  .card {
+    scroll-margin-top: 96px;
+  }
 }
 
 .control {
@@ -693,6 +698,41 @@ input[type='range'] {
   right: 50%;
   background: var(--loss-3);
   border-radius: 3px 0 0 3px;
+}
+
+.notes {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  max-width: 100%;
+}
+
+.notes p,
+.notes ul {
+  max-width: 760px;
+}
+
+.notes h3 {
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  margin: 16px 0 4px;
+}
+
+.notes li {
+  margin-bottom: 6px;
+}
+
+.notes strong {
+  color: var(--text-primary);
+}
+
+.stat a.moe {
+  color: var(--text-muted);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--axis);
+}
+
+.stat a.moe:hover {
+  color: var(--text-primary);
 }
 
 .sources {
