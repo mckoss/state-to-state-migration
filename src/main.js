@@ -20,6 +20,22 @@ function fmtCompact(v) {
 }
 const fmtRate = (v) => (v === null || v === undefined || Number.isNaN(v) ? '—' : (v > 0 ? '+' : v < 0 ? MINUS : '') + Math.abs(v).toFixed(1));
 const moeOf = (...m) => Math.round(Math.sqrt(m.reduce((s, x) => s + (x || 0) ** 2, 0)));
+// ACS margins of error are 90% intervals: an estimate is statistically
+// different from zero only when it is larger than its margin of error.
+const isSig = (v, moe) => Math.abs(v) > (moe || 0);
+/** Tooltip note on an estimate's 90% range; `flow` estimates can't be negative. */
+function rangeNote(v, moe, kind = 'net') {
+  const lo = kind === 'flow' ? Math.max(0, v - moe) : v - moe;
+  const f = kind === 'flow' ? fmtInt : fmtSigned;
+  const range = `${f(lo)} to ${f(v + moe)}`;
+  if (isSig(v, moe)) return { text: `90% range: ${range}.` };
+  return {
+    warn: true,
+    text: kind === 'flow'
+      ? `Not statistically significant: the 90% range is ${range}, so this flow may be close to zero.`
+      : `Not statistically significant: the 90% range, ${range}, includes zero, so the survey can't tell whether this is a gain or a loss.`,
+  };
+}
 
 // ---------- DOM helpers ----------
 function el(tag, attrs = {}, ...children) {
@@ -48,7 +64,8 @@ function showTip(event, title, rows, note) {
       el('div', { class: 'tt-row' },
         el('span', { class: 'k' }, color ? el('span', { class: 'tt-key', style: `border-color:${color}` }) : null, k),
         el('span', { class: 'v' }, v))),
-    note ? el('div', { class: 'tt-note' }, note) : null,
+    ...[note].flat().filter(Boolean).map((n) =>
+      el('div', { class: typeof n === 'object' && n.warn ? 'tt-note tt-warn' : 'tt-note' }, typeof n === 'object' ? n.text : n)),
   );
   tip.hidden = false;
   moveTip(event);
@@ -294,13 +311,14 @@ function buildArrows(m, tot) {
       pairs.sort((a, b) => Math.abs(b.net) - Math.abs(a.net));
       for (const p of pairs.slice(0, app.topN)) {
         const [o, d] = p.net > 0 ? [p.i, p.j] : [p.j, p.i];
-        arrows.push({ o, d, value: Math.abs(p.net), color: '--arrow-neutral', kind: 'netpair' });
+        const moe = moeOf(flowMoe(m, p.i, p.j), flowMoe(m, p.j, p.i));
+        arrows.push({ o, d, value: Math.abs(p.net), moe, color: '--arrow-neutral', kind: 'netpair' });
       }
     } else {
       const all = [];
       for (let o = 0; o < n; o++) for (let d = 0; d < n; d++) if (o !== d) all.push({ o, d, value: flow(m, o, d) });
       all.sort((a, b) => b.value - a.value);
-      for (const f of all.slice(0, app.topN)) arrows.push({ ...f, color: '--arrow-neutral', kind: 'gross' });
+      for (const f of all.slice(0, app.topN)) arrows.push({ ...f, moe: flowMoe(m, f.o, f.d), color: '--arrow-neutral', kind: 'gross' });
     }
   } else {
     const s = app.sel;
@@ -310,17 +328,18 @@ function buildArrows(m, tot) {
       for (const p of ps.slice(0, app.topN)) {
         if (p.net === 0) continue;
         arrows.push(p.net > 0
-          ? { o: p.i, d: s, value: p.net, color: '--arrow-in', kind: 'netsel', p }
-          : { o: s, d: p.i, value: -p.net, color: '--arrow-out', kind: 'netsel', p });
+          ? { o: p.i, d: s, value: p.net, moe: p.netMoe, color: '--arrow-in', kind: 'netsel', p }
+          : { o: s, d: p.i, value: -p.net, moe: p.netMoe, color: '--arrow-out', kind: 'netsel', p });
       }
     } else {
       ps.sort((a, b) => b.inflow + b.outflow - (a.inflow + a.outflow));
       for (const p of ps.slice(0, app.topN)) {
-        if (p.inflow) arrows.push({ o: p.i, d: s, value: p.inflow, color: '--arrow-in', kind: 'in', p });
-        if (p.outflow) arrows.push({ o: s, d: p.i, value: p.outflow, color: '--arrow-out', kind: 'out', p });
+        if (p.inflow) arrows.push({ o: p.i, d: s, value: p.inflow, moe: p.inMoe, color: '--arrow-in', kind: 'in', p });
+        if (p.outflow) arrows.push({ o: s, d: p.i, value: p.outflow, moe: p.outMoe, color: '--arrow-out', kind: 'out', p });
       }
     }
   }
+  for (const a of arrows) a.sig = isSig(a.value, a.moe);
   return arrows.filter((a) => st[a.o] && st[a.d]);
 }
 
@@ -341,7 +360,10 @@ function arrowTip(event, a, m) {
       [`Into ${S.abbr} from ${P.abbr}`, p.inSup ? 'N (suppressed)' : `${fmtInt(p.inflow)} ± ${fmtInt(p.inMoe)}`, css('--arrow-in')],
       [`Out of ${S.abbr} to ${P.abbr}`, p.outSup ? 'N (suppressed)' : `${fmtInt(p.outflow)} ± ${fmtInt(p.outMoe)}`, css('--arrow-out')],
       [`Net for ${S.abbr}`, `${fmtSigned(net)} ± ${fmtInt(p.netMoe)}`],
-    ], `ACS ${app.year}; ± is the 90% margin of error. Click to focus on ${P.name}.`);
+    ], [
+      a.kind === 'netsel' ? rangeNote(net, p.netMoe) : rangeNote(a.value, a.moe, 'flow'),
+      `ACS ${app.year}; ± is the 90% margin of error. Click to focus on ${P.name}.`,
+    ]);
     return;
   }
   if (a.kind === 'netpair') {
@@ -351,12 +373,13 @@ function arrowTip(event, a, m) {
       ['Net movers', fmtInt(a.value)],
       [`${O.abbr} → ${D.abbr}`, `${fmtInt(ab)} ± ${fmtInt(flowMoe(m, a.o, a.d))}`],
       [`${D.abbr} → ${O.abbr}`, `${fmtInt(ba)} ± ${fmtInt(flowMoe(m, a.d, a.o))}`],
-    ], `Margin of error on net: ± ${fmtInt(moeOf(flowMoe(m, a.o, a.d), flowMoe(m, a.d, a.o)))}. Click to focus on ${D.name}.`);
+      ['Margin of error', `± ${fmtInt(a.moe)}`],
+    ], [rangeNote(a.value, a.moe), `Click to focus on ${D.name}.`]);
   } else {
     showTip(event, `${O.name} → ${D.name}`, [
       ['Movers', `${fmtInt(a.value)} ± ${fmtInt(flowMoe(m, a.o, a.d))}`],
       [`Reverse (${D.abbr} → ${O.abbr})`, fmtInt(flow(m, a.d, a.o))],
-    ], `Lived in ${O.name} in ${app.year - 1}, ${D.name} in ${app.year}. Click to focus on ${D.name}.`);
+    ], [rangeNote(a.value, a.moe, 'flow'), `Lived in ${O.name} in ${app.year - 1}, ${D.name} in ${app.year}. Click to focus on ${D.name}.`]);
   }
 }
 
@@ -406,6 +429,7 @@ function renderMap(m) {
   gAbbr.selectAll('text').classed('on-selected', (s) => app.byFips.get(s.fips).i === sel);
 
   const arrows = buildArrows(m, tot);
+  app.current.anyNs = arrows.some((a) => !a.sig);
   const maxV = d3.max(arrows, (a) => a.value) || 1;
   const MAX_W = 10;
   for (const a of arrows) {
@@ -436,7 +460,10 @@ function renderMap(m) {
     });
   groups.select('.halo').attr('d', (a) => a.geom.shaft).attr('stroke-width', (a) => a.w + 3);
   groups.select('.head-halo').attr('d', (a) => a.geom.head);
-  groups.select('.shaft').attr('d', (a) => a.geom.shaft).attr('stroke-width', (a) => a.w).attr('stroke', (a) => css(a.color));
+  groups.classed('ns', (a) => !a.sig);
+  groups.select('.shaft').attr('d', (a) => a.geom.shaft).attr('stroke-width', (a) => a.w).attr('stroke', (a) => css(a.color))
+    .attr('stroke-dasharray', (a) => (a.sig ? null : `${Math.max(3, a.w * 1.5)} ${Math.max(3, a.w * 1.2)}`))
+    .attr('stroke-linecap', (a) => (a.sig ? null : 'butt'));
   groups.select('.head').attr('d', (a) => a.geom.head).attr('fill', (a) => css(a.color));
   groups.select('.hit').attr('d', (a) => a.geom.shaft);
   const setHover = (a) => {
@@ -506,14 +533,19 @@ function renderLegend(scale) {
       el('span', { class: 'key' }, line('--arrow-out'), app.mode === 'net' ? `Out: net loss from ${ab}` : `Out: left ${ab}`),
     ];
   }
+  if (app.current?.anyNs) {
+    const s = d3.create('svg').attr('width', 30).attr('height', 10);
+    s.append('path').attr('d', 'M2,5H26').attr('stroke', css('--text-secondary')).attr('stroke-width', 2.5).attr('stroke-dasharray', '4 3');
+    keys.push(el('span', { class: 'key', title: 'The 90% margin of error is larger than the estimate' }, s.node(), 'Dashed: not statistically significant'));
+  }
   document.getElementById('arrow-legend').replaceChildren(...keys, el('span', {}, 'Width proportional to movers · hover for values'));
 }
 
-function stat(label, value, moe) {
-  return el('div', { class: 'stat' },
+function stat(label, value, moe, ns = false) {
+  return el('div', { class: `stat${ns ? ' ns' : ''}` },
     el('span', { class: 'label' }, label),
-    el('span', { class: 'value' }, value),
-    moe !== undefined ? el('span', { class: 'moe' }, `± ${fmtInt(moe)}`) : null);
+    el('span', { class: 'value', title: ns ? 'Not statistically significant: the margin of error is larger than the estimate' : null }, value),
+    moe !== undefined ? el('span', { class: 'moe' }, `± ${fmtInt(moe)}${ns ? ' · not significant' : ''}`) : null);
 }
 
 function renderHeader(tot) {
@@ -539,7 +571,7 @@ function renderHeader(tot) {
     stats.replaceChildren(
       stat('Moved in', fmtInt(t.inflow), t.inMoe),
       stat('Moved out', fmtInt(t.outflow), t.outMoe),
-      stat('Net', fmtSigned(t.net), t.netMoe),
+      stat('Net', fmtSigned(t.net), t.netMoe, !isSig(t.net, t.netMoe)),
     );
   }
 }
@@ -559,7 +591,7 @@ function stateTip(event, i, node) {
       ['Moved out', `${fmtInt(t.outflow)} ± ${fmtInt(t.outMoe)}`, css('--arrow-out')],
       ['Net', `${fmtSigned(t.net)} ± ${fmtInt(t.netMoe)}`],
     ];
-    note = sel === i ? 'Click to show all states' : 'Click to focus on this state';
+    note = [rangeNote(t.net, t.netMoe), sel === i ? 'Click to show all states' : 'Click to focus on this state'];
   } else {
     const T = app.states[sel];
     const inflow = flow(m, i, sel);
@@ -570,7 +602,7 @@ function stateTip(event, i, node) {
       [`${T.abbr} → ${S.abbr}`, isSuppressed(m, sel, i) ? 'N (suppressed)' : `${fmtInt(outflow)} ± ${fmtInt(flowMoe(m, sel, i))}`, css('--arrow-out')],
       [`Net for ${T.abbr}`, `${fmtSigned(inflow - outflow)} ± ${fmtInt(moeOf(flowMoe(m, i, sel), flowMoe(m, sel, i)))}`],
     ];
-    note = `Click to focus on ${S.name}`;
+    note = [rangeNote(inflow - outflow, moeOf(flowMoe(m, i, sel), flowMoe(m, sel, i))), `Click to focus on ${S.name}`];
   }
   if (node) tipAtElement(node, title, rows, note);
   else showTip(event, title, rows, note);
@@ -646,7 +678,7 @@ async function renderHistory() {
     if (a) rows.push([sel < 0 ? 'ACS interstate movers' : 'ACS net', a.moe !== null ? `${fmtSigned(a.v)} ± ${fmtInt(a.moe)}` : fmtInt(a.v), barColor(a.v)]);
     else rows.push(['ACS', 'no 1-year table']);
     if (p !== undefined) rows.push(['PopEst net domestic', fmtSigned(p), css('--arrow-neutral')]);
-    showTip(e, String(yr), rows, a ? 'Click to view this year' : null);
+    showTip(e, String(yr), rows, [a && a.moe !== null ? rangeNote(a.v, a.moe) : null, a ? 'Click to view this year' : null]);
   };
 
   s.append('g').selectAll('path').data(years.filter((yr) => acsVals.has(yr))).join('path')
@@ -759,6 +791,9 @@ function sortableTable(table, name, columns, rows, footer, rowAttrs) {
 }
 
 const signCls = (v) => (v > 0 ? 'pos' : v < 0 ? 'neg' : 'muted');
+// Net cells: colored by sign, grayed when not statistically significant.
+const netCls = (v, moe) => `${signCls(v)}${isSig(v, moe) ? '' : ' ns'}`;
+const NS_NOTE = 'Gray italic net values are not statistically different from zero (90% margin of error larger than the estimate).';
 function minibar(v, max) {
   const pct = max ? Math.min(50, (Math.abs(v) / max) * 50) : 0;
   return el('div', { class: 'minibar', role: 'presentation' }, v ? el('span', { class: v > 0 ? 'pos' : 'neg', style: `width:${pct}%` }) : null);
@@ -782,14 +817,14 @@ function renderFlowsTable(m) {
     const rows = tot.map((t) => ({ ...t, name: st[t.i].name }));
     const max = d3.max(rows, (r) => Math.abs(r.net));
     title.textContent = `All states, ${app.year}`;
-    sub.textContent = 'People who moved in from, and out to, other states (including D.C. and Puerto Rico). Click a row to focus on a state.';
+    sub.textContent = `People who moved in from, and out to, other states (including D.C. and Puerto Rico). ${NS_NOTE} Click a row to focus on a state.`;
     sortableTable(table, 'flowsAll', [
       { key: 'name', label: 'State' },
       { key: 'inflow', label: 'Moved in', render: (r) => fmtInt(r.inflow) },
       { key: 'inMoe', label: '±', render: (r) => fmtInt(r.inMoe), cls: () => 'muted', title: '90% margin of error' },
       { key: 'outflow', label: 'Moved out', render: (r) => fmtInt(r.outflow) },
       { key: 'outMoe', label: '±', render: (r) => fmtInt(r.outMoe), cls: () => 'muted', title: '90% margin of error' },
-      { key: 'net', label: 'Net', render: (r) => fmtSigned(r.net), cls: (r) => signCls(r.net), defaultSort: true },
+      { key: 'net', label: 'Net', render: (r) => fmtSigned(r.net), cls: (r) => netCls(r.net, r.netMoe), defaultSort: true },
       { key: 'netMoe', label: '±', render: (r) => fmtInt(r.netMoe), cls: () => 'muted', title: '90% margin of error' },
       { key: 'bar', label: '', sortable: false, barcell: true, render: (r) => minibar(r.net, max) },
     ], rows, { name: 'Total', inflow: fmtInt(d3.sum(rows, (r) => r.inflow)), outflow: fmtInt(d3.sum(rows, (r) => r.outflow)) }, rowAttrs);
@@ -799,7 +834,7 @@ function renderFlowsTable(m) {
     const max = d3.max(rows, (r) => Math.abs(r.net));
     const sup = (flag, v) => (flag ? 'N' : fmtInt(v));
     title.textContent = `${S.name} and each other state, ${app.year}`;
-    sub.textContent = `Moved in: lived in the partner state a year earlier and in ${S.name} now. N = suppressed by the Census Bureau. Click a row to switch to that state.`;
+    sub.textContent = `Moved in: lived in the partner state a year earlier and in ${S.name} now. N = suppressed by the Census Bureau. ${NS_NOTE} Click a row to switch to that state.`;
     const t = totals(m)[sel];
     sortableTable(table, 'flowsSel', [
       { key: 'name', label: 'Partner state' },
@@ -807,7 +842,7 @@ function renderFlowsTable(m) {
       { key: 'inMoe', label: '±', render: (r) => fmtInt(r.inMoe), cls: () => 'muted', title: '90% margin of error' },
       { key: 'outflow', label: `Out of ${S.abbr}`, render: (r) => sup(r.outSup, r.outflow) },
       { key: 'outMoe', label: '±', render: (r) => fmtInt(r.outMoe), cls: () => 'muted', title: '90% margin of error' },
-      { key: 'net', label: `Net for ${S.abbr}`, render: (r) => fmtSigned(r.net), cls: (r) => signCls(r.net), sortVal: (r) => r.net, defaultSort: true },
+      { key: 'net', label: `Net for ${S.abbr}`, render: (r) => fmtSigned(r.net), cls: (r) => netCls(r.net, r.netMoe), sortVal: (r) => r.net, defaultSort: true },
       { key: 'netMoe', label: '±', render: (r) => fmtInt(r.netMoe), cls: () => 'muted', title: '90% margin of error' },
       { key: 'bar', label: '', sortable: false, barcell: true, render: (r) => minibar(r.net, max) },
     ], rows, {
