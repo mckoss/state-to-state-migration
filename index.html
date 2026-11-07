@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>State-to-State Migration</title>
+    <meta name="description" content="Interactive map of U.S. state-to-state migration flows from the American Community Survey, with the latest Census population estimates." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 24 Q16 2 28 18' fill='none' stroke='%232a78d6' stroke-width='3'/%3E%3Cpath d='M28 18 l-7 -1 l5 -5z' fill='%232a78d6'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="title-row">
+        <h1>State-to-State Migration</h1>
+        <span class="version" id="version"></span>
+      </div>
+      <p class="subtitle">
+        People who lived in a different state one year earlier, from the American Community Survey
+        1-year estimates, plus the latest Census Bureau population estimates of net migration.
+      </p>
+    </header>
+
+    <main>
+      <section class="controls" aria-label="Filters">
+        <label class="control">
+          <span>Dataset</span>
+          <select id="year"></select>
+        </label>
+        <label class="control">
+          <span>State</span>
+          <select id="state"><option value="">All states</option></select>
+        </label>
+        <div class="control">
+          <span id="mode-label">Arrows</span>
+          <div class="segmented" role="radiogroup" aria-labelledby="mode-label">
+            <button type="button" role="radio" data-mode="net" aria-checked="true">Net</button>
+            <button type="button" role="radio" data-mode="both" aria-checked="false">In &amp; out</button>
+          </div>
+        </div>
+        <label class="control">
+          <span>Top flows: <output id="topn-out">12</output></span>
+          <input type="range" id="topn" min="3" max="30" value="12" />
+        </label>
+      </section>
+
+      <section class="card map-card">
+        <div class="card-head">
+          <div>
+            <h2 id="map-title"></h2>
+            <p class="card-sub" id="map-sub"></p>
+          </div>
+          <div class="stats" id="stats"></div>
+        </div>
+        <div class="map-wrap">
+          <svg id="map" viewBox="0 0 975 610" role="img" aria-labelledby="map-title map-sub"></svg>
+        </div>
+        <div class="legend-row">
+          <div id="legend" class="legend"></div>
+          <div id="arrow-legend" class="legend arrow-legend"></div>
+        </div>
+        <p class="hint">Click a state to focus on it; click it again (or press Esc) to return to all states. Puerto Rico is shown as the square near Florida.</p>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 id="history-title"></h2>
+            <p class="card-sub" id="history-sub"></p>
+          </div>
+          <div id="history-legend" class="legend"></div>
+        </div>
+        <div id="history" class="history"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <div>
+            <h2 id="flows-title"></h2>
+            <p class="card-sub" id="flows-sub"></p>
+          </div>
+        </div>
+        <div class="table-wrap"><table id="flows-table" class="data-table"></table></div>
+      </section>
+
+      <section class="card" id="popest">
+        <div class="card-head">
+          <div>
+            <h2>Latest net migration: Census population estimates</h2>
+            <p class="card-sub" id="popest-sub"></p>
+          </div>
+          <label class="control inline">
+            <span>Year</span>
+            <select id="popest-year"></select>
+          </label>
+        </div>
+        <div class="table-wrap"><table id="popest-table" class="data-table"></table></div>
+      </section>
+
+      <footer class="sources">
+        <h2>Sources and notes</h2>
+        <ul>
+          <li>
+            Flows: U.S. Census Bureau,
+            <a href="https://www.census.gov/data/tables/time-series/demo/geographic-mobility/state-to-state-migration.html">State-to-State Migration Flows</a>,
+            American Community Survey 1-year estimates, 2005&ndash;2024. No 2020 table was released, because 2020 ACS
+            1-year data did not meet quality standards. "Current residence" is the destination and "residence 1 year ago"
+            the origin. Estimates carry a 90% margin of error (shown as &plusmn;); small flows are often not statistically
+            different from zero. Cells marked N were suppressed by the Census Bureau and are treated as zero on the map.
+          </li>
+          <li>
+            Population estimates: U.S. Census Bureau, Vintage 2025 state population totals and components of change
+            (<a href="https://www2.census.gov/programs-surveys/popest/datasets/2020-2025/state/totals/NST-EST2025-ALLDATA.csv">NST-EST2025-ALLDATA</a>).
+            Each year runs July 1 to June 30; 2020 covers April 1 to June 30, 2020 only. Rates are per 1,000 residents.
+          </li>
+          <li>All data is served from copies stored with this site; nothing is fetched from census.gov at run time.</li>
+        </ul>
+      </footer>
+    </main>
+    <div id="tooltip" class="tooltip" role="status" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "name": "state-to-state-migration",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "data": "node scripts/build-data.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test scripts/*.test.mjs",
+    "prebuild": "npm run data",
+    "predev": "npm run data"
+  },
+  "devDependencies": {
+    "vite": "^8.3.6",
+    "xlsx": "^0.18.5"
+  },
+  "dependencies": {
+    "d3": "^7.9.2",
+    "topojson-client": "^3.1.0",
+    "us-atlas": "^3.0.1"
+  }
+}
