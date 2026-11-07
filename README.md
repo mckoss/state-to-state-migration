@@ -54,5 +54,21 @@ npm install
 npm run dev
 ```
 
+## Tests
+
+```bash
+npm test
+```
+
+```bash
+npm run build && npm run test:e2e
+```
+
+`npm test` runs the data-parser unit tests. `npm run test:e2e` runs the Playwright
+suite in `e2e/` against the production build served by `vite preview`. It covers
+map interactions, arrow colors and widths, hover tooltips, the dataset and year
+controls, table sorting, and phone layout. CI runs both before every deploy, and
+a failed run uploads the Playwright report as an artifact.
+
 Versioning follows semver: bump `package.json` (and the lockfile) once per PR with
 `npm version <patch|minor|major> --no-git-tag-version`.
