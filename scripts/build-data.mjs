@@ -60,10 +60,58 @@ function num(v) {
   return null;
 }
 
+function sheetGrid(wb, name) {
+  return XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, raw: true, defval: null });
+}
+
 function readGrid(file) {
   const wb = XLSX.readFile(file);
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  return sheetGrid(wb, wb.SheetNames[0]);
+}
+
+/**
+ * Margins of error the Census Bureau publishes for a state's total movers to
+ * (or from) other states, read from the column whose header cell matches
+ * `header` and has an "Estimate" header below it. Returns an array indexed
+ * like STATES, or null when the table has no such column. These replace the
+ * square-root-of-sum-of-squares approximation, which overstates them.
+ */
+export function parseTotalMoe(grid, header) {
+  const n = STATES.length;
+  const cell = (r, c) => (grid[r] ? grid[r][c] : null);
+  const text = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 1; c < (grid[r] || []).length; c++) {
+      if (!header(text(cell(r, c)), text(cell(r - 1, c)))) continue;
+      const below = [1, 2, 3].map((k) => text(cell(r + k, c)).toLowerCase());
+      if (!below.some((v) => v.startsWith('estimate'))) continue;
+      const moe = new Array(n).fill(null);
+      let found = 0;
+      for (let rr = r + 1; rr < grid.length && found < n; rr++) {
+        const i = stateIndex(cell(rr, 0));
+        if (i < 0 || moe[i] !== null) continue;
+        moe[i] = num(cell(rr, c + 1));
+        if (moe[i] !== null) found++;
+      }
+      return found >= n - 1 ? moe : null;
+    }
+  }
+  return null;
+}
+
+/** Published total-mover MOEs for a workbook: { inMoe, outMoe } (either may be null). */
+export function publishedTotals(file) {
+  const wb = XLSX.readFile(file);
+  const first = sheetGrid(wb, wb.SheetNames[0]);
+  // Wide tables (2010-2023): a "Total" column under "Different state of residence 1 year ago".
+  let inMoe = parseTotalMoe(first, (t, above) => t === 'Total' && /different state/i.test(above));
+  let outMoe = null;
+  // Long tables (2024+): supplemental sheets for current residence and residence 1 year ago.
+  const cur = wb.SheetNames.find((s) => /current res/i.test(s));
+  const ago = wb.SheetNames.find((s) => /1 year ago/i.test(s));
+  if (cur) inMoe = parseTotalMoe(sheetGrid(wb, cur), (t) => /^movers to current residence from different state/i.test(t)) ?? inMoe;
+  if (ago) outMoe = parseTotalMoe(sheetGrid(wb, ago), (t) => /^movers from residence 1 year ago to different state/i.test(t));
+  return { inMoe, outMoe };
 }
 
 /** Parse a grid into an N x N matrix: flows[dest][origin] = {e, m}. */
@@ -153,12 +201,14 @@ function buildAcs() {
     const year = Number(f.match(/\d{4}/)[0]);
     const m = parseGrid(readGrid(path.join(dir, f)));
     const { missing, total } = checkMatrix(year, m);
+    const { inMoe, outMoe } = publishedTotals(path.join(dir, f));
     fs.writeFileSync(
       path.join(OUT, `acs-${year}.json`),
-      JSON.stringify({ year, source: f, est: m.est, moe: m.moe }),
+      JSON.stringify({ year, source: f, est: m.est, moe: m.moe, inMoe, outMoe }),
     );
     years.push({ year, file: `acs-${year}.json`, source: f, interstateMovers: total, suppressed: missing });
-    console.log(`ACS ${year}: ${total.toLocaleString()} interstate movers, ${missing} suppressed cells`);
+    const pub = [inMoe && 'in', outMoe && 'out'].filter(Boolean).join('+') || 'none';
+    console.log(`ACS ${year}: ${total.toLocaleString()} interstate movers, ${missing} suppressed cells, published total MOEs: ${pub}`);
   }
   return years;
 }

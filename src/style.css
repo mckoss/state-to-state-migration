@@ -34,6 +34,7 @@
   --pos-text: #1c5cab;
   --neg-text: #b3262a;
   --arrow-neutral: #2b2a28;
+  --arrow-ns: #7d7b75;
   --selected-fill: #3d3c3a;
   --state-stroke: #fcfcfb;
 }
@@ -70,6 +71,7 @@
     --pos-text: #86b6ef;
     --neg-text: #f7bcbb;
     --arrow-neutral: #f0efec;
+    --arrow-ns: #9a988f;
     --selected-fill: #d8d7d0;
     --state-stroke: #1a1a19;
   }
@@ -105,6 +107,7 @@
   --pos-text: #86b6ef;
   --neg-text: #f7bcbb;
   --arrow-neutral: #f0efec;
+  --arrow-ns: #9a988f;
   --selected-fill: #d8d7d0;
   --state-stroke: #1a1a19;
 }

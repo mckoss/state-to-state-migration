@@ -146,9 +146,13 @@ function totals(m) {
       inflow,
       outflow,
       net: inflow - outflow,
-      inMoe: Math.round(Math.sqrt(mi)),
-      outMoe: Math.round(Math.sqrt(mo)),
-      netMoe: Math.round(Math.sqrt(mi + mo)),
+      // Prefer the Census Bureau's published total MOEs; the root-sum-of-squares
+      // approximation over 51 partner flows overstates them by roughly 5-15%.
+      ...(() => {
+        const inMoe = m.inMoe?.[i] ?? Math.round(Math.sqrt(mi));
+        const outMoe = m.outMoe?.[i] ?? Math.round(Math.sqrt(mo));
+        return { inMoe, outMoe, netMoe: moeOf(inMoe, outMoe) };
+      })(),
     };
   });
 }
@@ -344,7 +348,11 @@ function buildArrows(m, tot) {
       }
     }
   }
-  for (const a of arrows) a.sig = isSig(a.value, a.moe);
+  for (const a of arrows) {
+    a.sig = isSig(a.value, a.moe);
+    // A net whose 90% range spans zero has no known direction: draw it neutral.
+    if (!a.sig && (a.kind === 'netpair' || a.kind === 'netsel')) a.color = '--arrow-ns';
+  }
   return arrows.filter((a) => st[a.o] && st[a.d]);
 }
 
@@ -418,10 +426,17 @@ function renderMap(m) {
   app.current = { m, tot };
   const sel = app.sel;
   let values;
-  if (sel < 0) values = tot.map((t) => t.net);
-  else {
+  let moes;
+  if (sel < 0) {
+    values = tot.map((t) => t.net);
+    moes = tot.map((t) => t.netMoe);
+  } else {
     values = new Array(st.length).fill(null);
-    for (const p of partners(m, sel)) values[p.i] = p.net;
+    moes = new Array(st.length).fill(null);
+    for (const p of partners(m, sel)) {
+      values[p.i] = p.net;
+      moes[p.i] = p.netMoe;
+    }
   }
   const scale = divergingScale(values.filter((v, i) => i !== sel && v !== null), sel < 0 ? '--gain' : '--in');
 
@@ -429,7 +444,9 @@ function renderMap(m) {
     .classed('selected', (s) => app.byFips.get(s.fips).i === sel)
     .attr('fill', (s) => {
       const i = app.byFips.get(s.fips).i;
-      return i === sel ? css('--selected-fill') : scale.color(values[i]);
+      if (i === sel) return css('--selected-fill');
+      if (values[i] !== null && !isSig(values[i], moes[i])) return css('--div-mid');
+      return scale.color(values[i]);
     });
   gAbbr.selectAll('text').classed('on-selected', (s) => app.byFips.get(s.fips).i === sel);
 
@@ -489,7 +506,8 @@ function renderMap(m) {
     // Arrows cover their endpoints, so clicking one focuses the far state.
     .on('click', (e, a) => setState(a.o === sel ? a.d : a.d === sel ? a.o : a.d));
 
-  const labelItems = [...arrows].sort((a, b) => b.value - a.value);
+  // Values that aren't statistically significant are left unlabeled (they're on hover).
+  const labelItems = arrows.filter((a) => a.sig).sort((a, b) => b.value - a.value);
   placeLabels(labelItems);
   gLabels.selectAll('text')
     .data(labelItems)
@@ -519,6 +537,8 @@ function renderLegend(scale) {
       el('span', {}, 'Gain'),
     ),
     el('span', {}, `Steps: ${b.map(fmtB).join(' · ')}`),
+    el('span', { class: 'key', title: 'The 90% margin of error is larger than the net, so it could be a gain or a loss' },
+      sw(css('--div-mid')), 'Not statistically significant'),
   );
 
   const line = (color) => {
@@ -540,8 +560,11 @@ function renderLegend(scale) {
   }
   if (app.current?.anyNs) {
     const s = d3.create('svg').attr('width', 30).attr('height', 10);
-    s.append('path').attr('d', 'M2,5H26').attr('stroke', css('--text-secondary')).attr('stroke-width', 2.5).attr('stroke-dasharray', '4 3');
-    keys.push(el('span', { class: 'key', title: 'The 90% margin of error is larger than the estimate' }, s.node(), 'Dashed: not statistically significant'));
+    const netMode = app.mode === 'net';
+    s.append('path').attr('d', 'M2,5H26').attr('stroke', css(netMode ? '--arrow-ns' : '--text-secondary'))
+      .attr('stroke-width', 2.5).attr('stroke-dasharray', '4 3');
+    keys.push(el('span', { class: 'key', title: 'The 90% margin of error is larger than the estimate; hover for the value' }, s.node(),
+      netMode ? 'Gray dashed: direction not significant' : 'Dashed: not statistically significant'));
   }
   document.getElementById('arrow-legend').replaceChildren(...keys, el('span', {}, 'Width proportional to movers · hover for values'));
 }
@@ -663,7 +686,11 @@ async function renderHistory() {
       .attr('dominant-baseline', 'central').text((d) => fmtCompact(d)));
   s.append('line').attr('class', 'baseline').attr('x1', M.l).attr('x2', W - M.r).attr('y1', y(0)).attr('y2', y(0));
 
-  const barColor = (v) => (sel < 0 ? css('--accent') : v >= 0 ? css('--in-3') : css('--loss-3'));
+  const barColor = (v, moe = null) => {
+    if (sel < 0) return css('--accent');
+    if (moe !== null && !isSig(v, moe)) return css('--arrow-ns');
+    return v >= 0 ? css('--in-3') : css('--loss-3');
+  };
   const r = Math.min(4, x.bandwidth() / 2);
   const barPath = (yr, v) => {
     const x0 = x(yr);
@@ -680,7 +707,7 @@ async function renderHistory() {
     const a = acsVals.get(yr);
     const p = peVals.get(yr);
     const rows = [];
-    if (a) rows.push([sel < 0 ? 'ACS interstate movers' : 'ACS net', a.moe !== null ? `${fmtSigned(a.v)} ± ${fmtInt(a.moe)}` : fmtInt(a.v), barColor(a.v)]);
+    if (a) rows.push([sel < 0 ? 'ACS interstate movers' : 'ACS net', a.moe !== null ? `${fmtSigned(a.v)} ± ${fmtInt(a.moe)}` : fmtInt(a.v), barColor(a.v, a.moe)]);
     else rows.push(['ACS', 'no 1-year table']);
     if (p !== undefined) rows.push(['PopEst net domestic', fmtSigned(p), css('--arrow-neutral')]);
     showTip(e, String(yr), rows, [a && a.moe !== null ? rangeNote(a.v, a.moe) : null, a ? 'Click to view this year' : null]);
@@ -689,7 +716,7 @@ async function renderHistory() {
   s.append('g').selectAll('path').data(years.filter((yr) => acsVals.has(yr))).join('path')
     .attr('class', 'bar')
     .attr('d', (yr) => barPath(yr, acsVals.get(yr).v))
-    .attr('fill', (yr) => barColor(acsVals.get(yr).v))
+    .attr('fill', (yr) => barColor(acsVals.get(yr).v, acsVals.get(yr).moe))
     .attr('opacity', (yr) => (yr === app.year ? 1 : 0.55))
     .on('click', (e, yr) => setYear(yr))
     .on('pointermove', tipFor)
@@ -747,6 +774,7 @@ async function renderHistory() {
     legend.replaceChildren(
       el('span', { class: 'key' }, el('span', { class: 'swatch', style: `background:${css('--in-3')};width:10px` }),
         el('span', { class: 'swatch', style: `background:${css('--loss-3')};width:10px` }), 'ACS net (gain / loss)'),
+      el('span', { class: 'key' }, el('span', { class: 'swatch', style: `background:${css('--arrow-ns')};width:10px` }), 'Not significant'),
       el('span', { class: 'key' }, el('span', { class: 'swatch', style: `background:${css('--arrow-neutral')};width:9px;height:9px;border-radius:50%` }), 'PopEst net domestic'),
     );
   }
